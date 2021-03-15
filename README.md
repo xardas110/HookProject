@@ -11,3 +11,9 @@ Artists:
 August
 Irrjan
 Luis
+
+
+How to play:
+wasd - movement
+RMB - Hook function - Hold/Release
+LMB - Attack with sword
