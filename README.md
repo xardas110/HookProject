@@ -3,13 +3,13 @@
 Group 8:
 
 Programmers:
-Ali Al-Awadi
-Kristian W. Stensland
+Ali Al-Awadi,
+Kristian W. Stensland,
 Hans Petter
 
 Artists:
-August
-Irrjan
+August,
+Irrjan,
 Luis
 
 
