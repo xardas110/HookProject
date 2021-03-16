@@ -15,7 +15,7 @@ Luis
 
 How to play:
 
-wasd - movement
+wasd - Movement
 
 RMB - Hook function - Hold/Release
 
