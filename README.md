@@ -1,6 +1,6 @@
 # HookProject
 
-Gruppe 8:
+Group 8:
 
 Programmers:
 Ali Al-Awadi
