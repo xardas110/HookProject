@@ -6,6 +6,8 @@
 #include "Kismet/GameplayStatics.h"
 #include "PlayerBase.h"
 #include "AIParamaterComponent.h"
+#include "Components/CapsuleComponent.h"
+#include "GameFramework/CharacterMovementComponent.h"
 
 
 AAISquidbird::AAISquidbird()
@@ -17,6 +19,7 @@ AAISquidbird::AAISquidbird()
 void AAISquidbird::BeginPlay()
 {
 	Super::BeginPlay();
+	GetCharacterMovement()->RotationRate = FRotator(0.0f, 540.0f, 0.0f);
 	AttackHitbox->OnComponentBeginOverlap.AddDynamic(this, &AAISquidbird::OnBeginOverlap);
 }
 
@@ -35,12 +38,14 @@ void AAISquidbird::OnEndOverlapAttack()
 void AAISquidbird::Attack()
 {
 	bIsAttacking = true;
+	GetCharacterMovement()->DisableMovement();
 	UE_LOG(LogTemp, Warning, TEXT("Set bIsAttacking = true"));
 }
 
 void AAISquidbird::EndAttack()
 {
 	bIsAttacking = false;
+	GetCharacterMovement()->SetMovementMode(EMovementMode::MOVE_Walking);
 	UE_LOG(LogTemp, Warning, TEXT("Set bIsAttacking = false"));
 }
 
@@ -62,6 +67,14 @@ void AAISquidbird::Dodge()
 	{
 		UE_LOG(LogTemp, Error, TEXT("Couldn't get Paramater Component!"));
 	}
+}
+
+void AAISquidbird::HandleDeath()
+{
+	GetMesh()->SetSimulatePhysics(true);
+	GetMesh()->SetCollisionEnabled(ECollisionEnabled::QueryAndPhysics);
+	GetCapsuleComponent()->SetCollisionEnabled(ECollisionEnabled::NoCollision);
+	
 }
 
 void AAISquidbird::OnBeginOverlap(UPrimitiveComponent* OverlappedComponent, AActor* OtherActor,

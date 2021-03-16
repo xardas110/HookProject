@@ -54,6 +54,11 @@ void AAIBehaviorBase::EndAttack()
 	UE_LOG(LogTemp, Warning, TEXT("Default Attack Ended, bool change"));
 }
 
+void AAIBehaviorBase::HandleDeath()
+{
+	UE_LOG(LogTemp, Warning, TEXT("Default Death handle callded"));
+}
+
 // Called when the game starts or when spawned
 void AAIBehaviorBase::BeginPlay()
 {
@@ -93,6 +98,14 @@ void AAIBehaviorBase::Tick(float DeltaTime)
 			}
 		}
 	}
+	if(bIsDead)
+	{
+		TimeSinceDeath += DeltaTime;
+		if(TimeSinceDeath>=TimeUntilDespawn)
+		{
+			Destroy();
+		}
+	}
 }
 
 // Called to bind functionality to input
@@ -109,6 +122,7 @@ float AAIBehaviorBase::TakeDamage(float DamageAmount, FDamageEvent const& Damage
 	HealthTotal -= FMath::Min(HealthTotal, IncomingDamage);
 	if (HealthTotal <= 0) {
 		UE_LOG(LogTemp, Warning, TEXT("No health remaining"));
+		HandleDeath();
 		bIsDead=true;
 	}
 	return IncomingDamage;

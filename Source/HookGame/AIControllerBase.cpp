@@ -76,5 +76,6 @@ void AAIControllerBase::Tick(float DeltaSeconds) {
 
 	if (GetPawn<AAIBehaviorBase>()) {
 		GetBlackboardComponent()->SetValueAsBool(TEXT("IsGrabbed"), GetPawn<AAIBehaviorBase>()->bIsGrabbed);
+		GetBlackboardComponent()->SetValueAsBool(TEXT("IsAttacking"), GetPawn<AAIBehaviorBase>()->bIsAttacking);
 	}
 }

@@ -32,6 +32,7 @@ public:
 	
 	virtual void Dodge() override;
 
+	virtual void HandleDeath() override;
 	
 	UPROPERTY(BlueprintReadWrite)
 		bool bIsDodging = false;

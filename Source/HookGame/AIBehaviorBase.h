@@ -24,12 +24,17 @@ public:
 	UPROPERTY(BlueprintReadWrite)
 		bool bIsAttacking = false;
 
-	bool bIsDead = false;
+	UPROPERTY(BlueprintReadWrite)
+		bool bIsDead = false;
 
 	virtual void OnBeginOverlapAttack();
 	virtual void OnEndOverlapAttack();
 	virtual void Attack();
 	virtual void EndAttack();
+	virtual void HandleDeath();
+
+	UPROPERTY(EditAnywhere)
+		float TimeUntilDespawn = 10.f;
 protected:
 	// Called when the game starts or when spawned
 	virtual void BeginPlay() override;
@@ -50,6 +55,7 @@ protected:
 
 	float TimeSinceAttack = 0.f;
 
+	float TimeSinceDeath = 0.f;
 	
 	
 
