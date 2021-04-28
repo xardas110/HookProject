@@ -28,6 +28,16 @@ void UFallingBridgeComponent::BeginPlay()
 
 }
 
+int UFallingBridgeComponent::BoolToInt(bool FallMode)
+{
+	if(FallMode)
+	{
+		return 1;
+	}
+
+	return 0;
+}
+
 
 void UFallingBridgeComponent::CheckIfHit(AActor* SelfActor, AActor* OtherActor, FVector NormalImpulse, const FHitResult& Hit)
 {
@@ -43,17 +53,99 @@ void UFallingBridgeComponent::CheckIfHit(AActor* SelfActor, AActor* OtherActor, 
 void UFallingBridgeComponent::FallToTargetLocation(float DeltaTime)
 {
 
-	float CurrentPitch = GetOwner()->GetActorRotation().Pitch;
-	float CurrentRoll = GetOwner()->GetActorRotation().Roll;
-	float CurrentYaw = GetOwner()->GetActorRotation().Yaw;
 
-	FRotator FallingBridge{ TargetPitch,TargetYaw,TargetRoll };
+	
+	//float CurrentPitch = GetOwner()->GetActorRotation().Pitch;
+	//float CurrentRoll = GetOwner()->GetActorRotation().Roll;
+	//float CurrentYaw = GetOwner()->GetActorRotation().Yaw;
 
-	FallingBridge.Pitch = FMath::Lerp(CurrentPitch,TargetPitch, FallingSpeed*DeltaTime);
-	FallingBridge.Roll = FMath::Lerp(CurrentRoll, TargetRoll, FallingSpeed * DeltaTime);
-	FallingBridge.Yaw = FMath::Lerp(CurrentYaw, TargetYaw, FallingSpeed * DeltaTime);
 
-	GetOwner()->SetActorRotation(FallingBridge);
+	
+	FRotator Movement{ TargetPitch,TargetYaw,TargetRoll };
+
+	int CheckNumberOfFallModes
+	{
+		  BoolToInt(LinearInterpolation)
+		+ BoolToInt(InterpolateConstantTo)
+		+ BoolToInt(ExponentialInterpolationIn)
+		+ BoolToInt(ExponentialInterpolationOut)
+		+ BoolToInt(ExponentialInterpolationInOut)
+		+ BoolToInt(ConstantStepInterpolation)
+	};
+	
+	if(CheckNumberOfFallModes > 1)
+	{
+		UE_LOG(LogTemp, Warning,TEXT("%s has MORE than one fallmode active. Please pick just one."), *GetOwner()->GetName())
+	}
+
+	else if(CheckNumberOfFallModes == 0)
+	{
+		UE_LOG(LogTemp, Warning, TEXT("%s has NO fallmode active. Please pick one."), *GetOwner()->GetName())
+	}
+
+	else
+	{
+		
+		if(LinearInterpolation)
+		{
+
+			//Movement.Pitch = FMath::Lerp(CurrentPitch,TargetPitch, FallingSpeed * DeltaTime);
+			//Movement.Roll = FMath::Lerp(CurrentRoll, TargetRoll, FallingSpeed * DeltaTime);
+			//Movement.Yaw = FMath::Lerp(CurrentYaw, TargetYaw, FallingSpeed * DeltaTime);
+				
+			Movement = FMath::Lerp(GetOwner()->GetActorRotation(), Movement, FallingSpeed * DeltaTime);
+			
+			GetOwner()->SetActorRotation(Movement);
+		}
+
+		if(InterpolateConstantTo)
+		{
+			//Movement.Pitch = FMath::FInterpConstantTo(CurrentPitch, TargetPitch, DeltaTime, FallingSpeed);
+			//Movement.Roll = FMath::FInterpConstantTo(CurrentRoll, TargetRoll, DeltaTime, FallingSpeed);
+			//Movement.Yaw = FMath::FInterpConstantTo(CurrentYaw, TargetYaw, DeltaTime, FallingSpeed);
+
+			GetOwner()->SetActorRotation(Movement);
+		}
+
+		if (ExponentialInterpolationIn)
+		{
+			//Movement.Pitch = FMath::InterpExpoIn(CurrentPitch, TargetPitch, FallingSpeed * DeltaTime);
+			//Movement.Roll = FMath::InterpExpoIn(CurrentRoll, TargetRoll, FallingSpeed * DeltaTime);
+			//Movement.Yaw = FMath::InterpExpoIn(CurrentYaw, TargetYaw, FallingSpeed * DeltaTime);
+
+			GetOwner()->SetActorRotation(Movement);
+		}
+
+		if (ExponentialInterpolationOut)
+		{
+			//Movement.Pitch = FMath::InterpExpoOut(CurrentPitch, TargetPitch, FallingSpeed * DeltaTime);
+			//Movement.Roll = FMath::InterpExpoOut(CurrentRoll, TargetRoll, FallingSpeed * DeltaTime);
+			//Movement.Yaw = FMath::InterpExpoOut(CurrentYaw, TargetYaw, FallingSpeed * DeltaTime);
+
+			GetOwner()->SetActorRotation(Movement);
+		}
+
+		if (ExponentialInterpolationInOut)
+		{
+			//Movement.Pitch = FMath::InterpExpoInOut(CurrentPitch, TargetPitch, FallingSpeed * DeltaTime);
+			//Movement.Roll = FMath::InterpExpoInOut(CurrentRoll, TargetRoll, FallingSpeed * DeltaTime);
+			//Movement.Yaw = FMath::InterpExpoInOut(CurrentYaw, TargetYaw, FallingSpeed * DeltaTime);
+
+			GetOwner()->SetActorRotation(Movement);
+		}
+
+		if (ConstantStepInterpolation)
+		{
+			//Movement.Pitch = FMath::InterpExpoInOut(CurrentPitch, TargetPitch, FallingSpeed * DeltaTime);
+			//Movement.Roll = FMath::InterpExpoInOut(CurrentRoll, TargetRoll, FallingSpeed * DeltaTime);
+			//Movement.Yaw = FMath::InterpExpoInOut(CurrentYaw, TargetYaw, FallingSpeed * DeltaTime);
+
+			GetOwner()->SetActorRotation(Movement);
+		}
+
+	}
+	
+
 }
 
 

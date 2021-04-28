@@ -19,7 +19,7 @@ class HOOKGAME_API AHookProjectile : public AActor
 	UPROPERTY(EditAnywhere, Category = "Settings")
 	USphereComponent* HookCollision;
 	UPROPERTY(EditAnywhere, Category = "Settings")
-	UStaticMeshComponent* HookMesh;
+	class USkeletalMeshComponent* HookMesh;
 	UPROPERTY(VisibleAnywhere, Category = "Settings")
 	UProjectileMovementComponent* ProjectileMovementComponent;
 	UPROPERTY(VisibleAnywhere, Category = "Settings")
@@ -43,4 +43,6 @@ public:
 	virtual void Tick(float DeltaTime) override;
 	void ShootDirection(const FVector Direction);
 	USceneComponent* GetCableAttachmentPoint() const;
+	void SetSpeed(const float Speed);
+	void SetMeshRotation(const FRotator NewRotation);
 };

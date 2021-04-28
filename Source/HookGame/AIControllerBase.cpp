@@ -4,78 +4,132 @@
 #include "AIControllerBase.h"
 #include "Kismet/GameplayStatics.h"
 #include "BehaviorTree/BlackboardComponent.h"
-#include "AIParamaterComponent.h"
 #include "Math/UnrealMathUtility.h"
 #include "AIBehaviorBase.h"
+#include "AIRobotSidekick.h"
 
-void AAIControllerBase::PatrolFinished()
+//#define _DEBUG_AICONTROLLER
+
+void AAIControllerBase::PatrolFinished() // On a patrolling enemy, sets new rotation and destination
 {
-	if (OwnerParameters) {
+	if (GetPawn<AAIBehaviorBase>()) {
 
-		FRotator Rotation = FMath::Lerp(GetOwner()->GetActorRotation(), OwnerParameters->PatrolEndTurnAngleRotation, OwnerParameters->PatrolEndTurnSpeed);
+		FRotator Rotation = FMath::Lerp(GetOwner()->GetActorRotation(), GetPawn<AAIBehaviorBase>()->PatrolEndTurnAngleRotation, GetPawn<AAIBehaviorBase>()->PatrolEndTurnSpeed);
 		GetOwner()->SetActorRotation(Rotation);
 
-		if (Rotation == OwnerParameters->PatrolEndTurnAngleRotation) {
+		if (Rotation == GetPawn<AAIBehaviorBase>()->PatrolEndTurnAngleRotation) {
 			bPatrolFinished = false;
-			GetBlackboardComponent()->SetValueAsVector(TEXT("PatrolLocation"), GetPawn()->GetActorLocation() + OwnerParameters->PatrolDistance);
+			GetBlackboardComponent()->SetValueAsVector(TEXT("PatrolLocation"), GetPawn()->GetActorLocation() + GetPawn<AAIBehaviorBase>()->PatrolDistance);
 		}
 		
 	}
 }
 
 AAIControllerBase::AAIControllerBase() {
+	
 }
 
 void AAIControllerBase::BeginPlay() {
 	Super::BeginPlay();
+
+	
+	
 	APawn* PlayerPawn = UGameplayStatics::GetPlayerPawn(GetWorld(), 0);
 
-	if (AIBehavior != nullptr) {
+	if (AIBehavior != nullptr) { // if AIBehavior exists, Sets all blackboard key values
 		RunBehaviorTree(AIBehavior);
-		//UAIParamaterComponent* OwnerParameters = Cast<UAIParamaterComponent>(GetPawn()->GetOwner()->FindComponentByClass<UActorComponent>());
-		GetBlackboardComponent()->SetValueAsVector(TEXT("StartLocation"), GetPawn()->GetActorLocation());
-		if (GetPawn()->FindComponentByClass<UAIParamaterComponent>() == nullptr) {
-			UE_LOG(LogTemp, Error, TEXT(" AN AI ACTOR IS MISSING THEIR AI PARAMATERS COMPONENT!"));
-		}
-		else {
-		//UE_LOG(LogTemp, Warning, TEXT("%s Exists"), *GetPawn()->FindComponentByClass<UAIParamaterComponent>()->GetName());
-		OwnerParameters = GetPawn()->FindComponentByClass<UAIParamaterComponent>();
-		}
-		if (OwnerParameters != nullptr) {
-			GetBlackboardComponent()->SetValueAsVector(TEXT("PatrolLocation"), GetPawn()->GetActorLocation() + OwnerParameters->PatrolDistance);
-			GetBlackboardComponent()->SetValueAsBool(TEXT("PlayerInRange"), OwnerParameters->bPlayerInRange);
-			GetBlackboardComponent()->SetValueAsFloat(TEXT("ResetTimer"), OwnerParameters->ResetTimer);
-			GetBlackboardComponent()->SetValueAsBool(TEXT("IsPatrolling"), OwnerParameters->bPatrollingEnabled);
-			
+		if (!GetBlackboardComponent())
+		{
+			return;
 		}
 		
+		
+		
+		if (GetPawn<AAIBehaviorBase>())
+		{
+			GetBlackboardComponent()->SetValueAsVector(TEXT("StartLocation"), GetPawn()->GetActorLocation());
+			GetBlackboardComponent()->SetValueAsVector(TEXT("PatrolLocation"), GetPawn()->GetActorLocation() + GetPawn<AAIBehaviorBase>()->PatrolDistance);
+			GetBlackboardComponent()->SetValueAsBool(TEXT("PlayerInRange"), GetPawn<AAIBehaviorBase>()->bPlayerInRange);
+			GetBlackboardComponent()->SetValueAsFloat(TEXT("ResetTimer"), GetPawn<AAIBehaviorBase>()->ResetTimer);
+			GetBlackboardComponent()->SetValueAsBool(TEXT("IsPatrolling"), GetPawn<AAIBehaviorBase>()->bPatrollingEnabled);
+		}
+		if(GetPawn<AAIRobotSidekick>())
+		{
+			GetBlackboardComponent()->SetValueAsBool(TEXT("FollowPlayer"), GetPawn<AAIRobotSidekick>()->bFollowPlayer);
+#ifdef _DEBUG_AICONTROLLER
+			UE_LOG(LogTemp, Warning, TEXT(" Set FollowPlayer=True!"));
+#endif
+		}
+		else
+		{
+			GetBlackboardComponent()->SetValueAsBool(TEXT("FollowPlayer"), false);
+		}
+	}
+	else
+	{
+		UE_LOG(LogTemp, Error, TEXT(" *AIBehavior not found!* "));
 	}
 }
 
 void AAIControllerBase::Tick(float DeltaSeconds) {
 	Super::Tick(DeltaSeconds);
-	APawn* PlayerPawn = UGameplayStatics::GetPlayerPawn(GetWorld(), 0);
+
+	if (!GetBlackboardComponent())
+	{
+		return;
+	}
 	
+	APawn* PlayerPawn = UGameplayStatics::GetPlayerPawn(GetWorld(), 0);
 
-	if (LineOfSightTo(PlayerPawn)) {
-		GetBlackboardComponent()->SetValueAsVector(TEXT("PlayerLocation"), PlayerPawn->GetActorLocation());
-		GetBlackboardComponent()->SetValueAsVector(TEXT("LastKnownPlayerLocation"), PlayerPawn->GetActorLocation());
-	}
-	else {
-		GetBlackboardComponent()->ClearValue(TEXT("PlayerLocation"));
-	}
+	if (PlayerPawn)
+	{
+		GetBlackboardComponent()->SetValueAsBool(TEXT("IsDead"), GetPawn<AAIBehaviorBase>()->bIsDead);
+		GetBlackboardComponent()->SetValueAsBool(TEXT("bCanAttack"), GetPawn<AAIBehaviorBase>()->bCanAttack);
+		GetBlackboardComponent()->SetValueAsBool(TEXT("IsKnockedBack"), GetPawn<AAIBehaviorBase>()->bKnockedBack);
+		GetBlackboardComponent()->SetValueAsVector(TEXT("DistanceToPlayer"), PlayerPawn->GetActorLocation() - GetPawn()->GetActorLocation());
+		if (LineOfSightTo(PlayerPawn)&&!GetPawn<AAIRobotSidekick>()) { // Checks if the AI Can see the player, and therefore if it can chase them.
+			GetBlackboardComponent()->SetValueAsVector(TEXT("PlayerLocation"), PlayerPawn->GetActorLocation());
+			GetBlackboardComponent()->SetValueAsVector(TEXT("LastKnownPlayerLocation"), PlayerPawn->GetActorLocation());
+		}
+		else {
+			if(!GetPawn<AAIRobotSidekick>())
+			{
+			GetBlackboardComponent()->ClearValue(TEXT("PlayerLocation"));
+#ifdef _DEBUG_AICONTROLLER
+			UE_LOG(LogTemp, Warning, TEXT(" %s Can't see player "), *GetPawn()->GetName());
+#endif
+			}
+		}
 
-	if (OwnerParameters != nullptr) {
-		GetBlackboardComponent()->SetValueAsBool(TEXT("PlayerInRange"), OwnerParameters->bPlayerInRange);
-		GetBlackboardComponent()->SetValueAsBool(TEXT("ReturnToStart"), OwnerParameters->bReturnToStart);
-	}
+		if (GetPawn<AAIBehaviorBase>() && !GetPawn<AAIRobotSidekick>()) {
+			GetBlackboardComponent()->SetValueAsBool(TEXT("PlayerInRange"), GetPawn<AAIBehaviorBase>()->bPlayerInRange);
+			GetBlackboardComponent()->SetValueAsBool(TEXT("ReturnToStart"), GetPawn<AAIBehaviorBase>()->bReturnToStart);
+		}
 
-	if (bPatrolFinished == true) {
-		PatrolFinished();
-	}
+		if (bPatrolFinished == true) {
+			PatrolFinished();
+		}
 
-	if (GetPawn<AAIBehaviorBase>()) {
-		GetBlackboardComponent()->SetValueAsBool(TEXT("IsGrabbed"), GetPawn<AAIBehaviorBase>()->bIsGrabbed);
-		GetBlackboardComponent()->SetValueAsBool(TEXT("IsAttacking"), GetPawn<AAIBehaviorBase>()->bIsAttacking);
+		if (GetPawn<AAIBehaviorBase>() && !GetPawn<AAIRobotSidekick>()) {
+			GetBlackboardComponent()->SetValueAsBool(TEXT("IsGrabbed"), GetPawn<AAIBehaviorBase>()->bIsGrabbed);
+			GetBlackboardComponent()->SetValueAsBool(TEXT("IsAttacking"), GetPawn<AAIBehaviorBase>()->bIsAttacking);
+		}
+
+		if(GetPawn<AAIRobotSidekick>())
+		{
+			GetBlackboardComponent()->SetValueAsBool(TEXT("FollowPlayer"), GetPawn<AAIRobotSidekick>()->bFollowPlayer);
+			GetBlackboardComponent()->SetValueAsVector(TEXT("PlayerLocation"), PlayerPawn->GetActorLocation());
+			GetBlackboardComponent()->SetValueAsVector(TEXT("LastKnownPlayerLocation"), PlayerPawn->GetActorLocation());
+			
+			if(LineOfSightTo(PlayerPawn))
+			{
+				bCanSeePlayer = true;
+			}
+			else
+			{
+				bCanSeePlayer = false;
+			}
+			GetBlackboardComponent()->SetValueAsBool(TEXT("CanSeePlayer"), bCanSeePlayer);
+		}
 	}
 }

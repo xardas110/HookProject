@@ -5,6 +5,7 @@
 #include "Components/BoxComponent.h"
 #include "Kismet/GameplayStatics.h"
 #include "AIBehaviorBase.h"
+#include "Particles/ParticleSystemComponent.h"
 // Sets default values
 APlayerSword::APlayerSword()
 {
@@ -14,11 +15,16 @@ APlayerSword::APlayerSword()
 	SwordHandleLocation = CreateDefaultSubobject<USceneComponent>(TEXT("Sword Handle Location"));
 	SwordHitbox = CreateDefaultSubobject<UBoxComponent>(TEXT("Sword Hitbox"));
 	SwordMesh = CreateDefaultSubobject<UStaticMeshComponent>(TEXT("Sword Mesh"));
+	SwordParticleSpawnLocation = CreateDefaultSubobject<USceneComponent>(TEXT("Sword Particle Spawn Location"));
+	SwordParticleTrail = CreateDefaultSubobject<UParticleSystemComponent>("Sword Particle Trail");
 	
 	RootComponent = SwordHandleLocation;
 
 	SwordHitbox->SetupAttachment(SwordHandleLocation);
 	SwordMesh->SetupAttachment(SwordHitbox);
+	SwordParticleSpawnLocation->SetupAttachment(SwordHitbox);
+	SwordParticleTrail->SetupAttachment(SwordParticleSpawnLocation);
+	
 	SwordHitbox->OnComponentBeginOverlap.AddDynamic(this, &APlayerSword::OnBeginOverlap);
 }
 
@@ -29,6 +35,9 @@ void APlayerSword::BeginPlay()
 	SwordHitbox->SetGenerateOverlapEvents(false);
 	SwordMesh->SetCollisionEnabled(ECollisionEnabled::NoCollision);
 	SwordHitbox->SetCollisionEnabled(ECollisionEnabled::NoCollision);
+	SwordParticleTrail->Deactivate();
+
+	SwordLength = SwordHitbox->GetScaledBoxExtent().X;
 }
 
 void APlayerSword::OnBeginOverlap(UPrimitiveComponent* OverlappedComponent, AActor* OtherActor, UPrimitiveComponent* OtherComp, int32 OtherBodyIndex, bool bFromSweep, const FHitResult& SweepResult)
@@ -62,6 +71,10 @@ UBoxComponent* APlayerSword::GetCollisionComponent() const
 
 void APlayerSword::StartSwing()
 {
+	const auto CurrentBoxExtent = SwordHitbox->GetScaledBoxExtent();
+	SwordHitbox->SetBoxExtent({ SwordLength, CurrentBoxExtent.Y , CurrentBoxExtent.Z });
+	
+	SwordParticleTrail->Activate();
 	HitRegisteredComponentsInCurrentSwing.Empty();
 	SwordHitbox->SetCollisionEnabled(ECollisionEnabled::QueryAndPhysics);
 	SwordHitbox->SetGenerateOverlapEvents(true);
@@ -69,6 +82,7 @@ void APlayerSword::StartSwing()
 
 void APlayerSword::EndSwing()
 {
+	SwordParticleTrail->Deactivate();
 	SwordHitbox->SetCollisionEnabled(ECollisionEnabled::NoCollision);
 	SwordHitbox->SetGenerateOverlapEvents(false);
 }

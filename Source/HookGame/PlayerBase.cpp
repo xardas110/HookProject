@@ -3,21 +3,45 @@
 
 #include "PlayerBase.h"
 #include "DrawDebugHelpers.h"
+#include "Components/AudioComponent.h"
 #include "Components/BoxComponent.h"
 #include "Components/CapsuleComponent.h"
 #include "Kismet/GameplayStatics.h"
 #include "GameFramework/CharacterMovementComponent.h"
-#include "Kismet/KismetSystemLibrary.h"
 #include "AIBehaviorBase.h"
+#include "Components/SceneCaptureComponent2D.h"
+#include "Engine/TextureRenderTarget2D.h"
+#include "SceneView.h"
+#include "DirectXMath.h"
+#include "HookGameGameModeBase.h"
+#include "HookGameInstance.h"
+#include "PowerUpActor.h"
+#include "Blueprint/WidgetBlueprintLibrary.h"
+#include "Engine/SkeletalMeshSocket.h"
 #include "GameFramework/PawnMovementComponent.h"
+#include "Runtime/NavigationSystem/Public/NavigationSystem.h"
+#include "NavigationPath.h"
+#include "GrappleTraceComponent.h"
+#include "GrappleTracer.h"
 
 typedef APlayerBase THIS;
 
-constexpr auto CharacterTopBone = TEXT("End");
-constexpr auto CharacterBotBone = TEXT("End_002");
-constexpr auto CharacterSpine2 = TEXT("Spine2");
-constexpr auto CharacterHips = TEXT("Hips");
+constexpr auto CharacterTopBone = TEXT("Head");
+constexpr auto CharacterBotBone = TEXT("Toes_R_end");
+constexpr auto CharacterSpine2 = TEXT("Head");
+constexpr auto CharacterHips = TEXT("Belly");
 constexpr auto CharacterSwordSocket = TEXT("SwordSocket");
+constexpr auto CharacterHookSpawnPoint = TEXT("HookSocket");
+
+
+
+
+#define CreateObjectAndLog(Name, Type) \
+Name = CreateDefaultSubobject<USkillTree>(TEXT(#Name)); \
+if (!SkillTreeFuckUnreal) \
+	UE_LOG(LogTemp, Error, TEXT("Failed to create; %s"), *FString(#Name));
+
+
 
 #ifdef _DEBUG_ALL
 #define _DEBUG_VAULTING
@@ -28,187 +52,52 @@ constexpr auto CharacterSwordSocket = TEXT("SwordSocket");
 #endif
 //#define _DEBUG_UPDATE_CAMERA
 //#define _DEBUG_GRAPPLE
+//#define _DEBUG_GRAPPLE
+//#define _DEBUG_ANIM_NOTIFY
+
 APlayerBase::APlayerBase()
 {
-	bUseControllerRotationPitch = false;
-	bUseControllerRotationYaw = false;
-	bUseControllerRotationRoll = false;
-
-	//Make Character move towards input direction
-	GetCharacterMovement()->bOrientRotationToMovement = true;
-	GetCharacterMovement()->RotationRate = FRotator(0.0f, 540.0f, 0.0f); // ...at this rotation rate
-	GetCharacterMovement()->JumpZVelocity = 600.f;
-	
+	LogWarning("Playerbase recreated");
 	CreateComponents();
+	CharacterLoad();
+	InteractLoad();
 }
 
 void APlayerBase::BeginPlay()
 {
 	Super::BeginPlay();
 
+	const auto PlayerController = Cast<APlayerControllerBase>(Controller);
+	assert(PlayerController);
+
 	CharacterInit();
-	WidgetInit();
+	WidgetInit(PlayerController);
 	GrappleInit();
 	SwordInit();
+	CameraInit();
+	ShadowProjectionInit();
+	InteractInit(PlayerController);
+	VaultInit();
 
-	CameraInitialPosition = SpringArm->TargetOffset;
-	CameraInitialRotation = SpringArm->GetRelativeRotation();
+	if (SkillTreeFCRI)
+		SkillTreeFCRI->Init(this, PlayerController);
+
+	if(bRestartGame)
+	{
+		bRestartGame = false;
+		/*LoadCheckpoint();*/
+	}
+	
+	LoadPlayerData();
 }
-
 void APlayerBase::Tick(float DeltaTime)
 {
 	Super::Tick(DeltaTime);
-
 	CameraUpdate(DeltaTime);
 	HookUpdate(DeltaTime);
 	VaultingUpdate(DeltaTime);
+	CursorUpdate(DeltaTime);
 	DebugUpdate(DeltaTime);
-}
-void APlayerBase::VaultingUpdate(const float DeltaTime)
-{	
-	if (CustomMovementModes::Vaulting == _CustomMovementMode)
-	{
-		const FVector CharacterTopPoint = GetMesh()->GetBoneLocation(CharacterTopBone);
-		const FVector CharacterLowPoint = GetMesh()->GetBoneLocation(CharacterBotBone);
-		const float CharacterHeight = (CharacterTopPoint - CharacterLowPoint).Size();
-		const float CharacterHalfHeight = CharacterHeight * 0.5f;
-		GetCapsuleComponent()->SetCapsuleHalfHeight(CharacterHalfHeight);
-	}
-
-	if (CustomMovementModes::Default != _CustomMovementMode && CustomMovementModes::Grappling != _CustomMovementMode)
-		return;
-	
-	const TArray<AActor*> FrontTraceIgnoredActors;
-	FHitResult FrontTraceHitResult;
-	const float CapsuleRadius = GetCapsuleComponent()->GetScaledCapsuleRadius();
-	const float ForwardReach = CapsuleRadius;
-	const FVector ThisLocation = GetActorLocation();
-	const FVector ThisForward = GetActorForwardVector();
-	const FVector ForwardEndTrace = ThisLocation + ThisForward * ForwardReach;
-	
-#ifdef _DEBUG_VAULTING
-	const bool bForwardTraceHit = UKismetSystemLibrary::SphereTraceSingle(GetWorld(), ThisLocation, ForwardEndTrace, CapsuleRadius, ETraceTypeQuery::TraceTypeQuery1, true, FrontTraceIgnoredActors, EDrawDebugTrace::ForOneFrame, FrontTraceHitResult, true);
-#else
-	const bool bForwardTraceHit = UKismetSystemLibrary::SphereTraceSingle(GetWorld(), ThisLocation, ForwardEndTrace, CapsuleRadius, ETraceTypeQuery::TraceTypeQuery1, true, FrontTraceIgnoredActors, EDrawDebugTrace::None, FrontTraceHitResult, true);
-#endif
-	if (!bForwardTraceHit)
-		return;
-
-	const TArray<AActor*> TopTraceIgnoredActors;
-	FHitResult TopTraceHitResult;
-	const float CapsuleHalfHeight = GetCapsuleComponent()->GetScaledCapsuleHalfHeight();
-	const float MaxVaultHeight = CapsuleHalfHeight + GetCharacterMovement()->GetMaxJumpHeight();
-	const float TotalHeightFromTopToBottom = MaxVaultHeight + CapsuleHalfHeight;
-	const FVector TopTraceStartPoint = FrontTraceHitResult.ImpactPoint + FVector(0, 0.f, MaxVaultHeight) + ThisForward * CapsuleRadius;
-	const FVector TopEndTrace = TopTraceStartPoint - FVector(0.f, 0.f, TotalHeightFromTopToBottom);
-#ifdef _DEBUG_VAULTING
-	const bool bTopTraceHit = UKismetSystemLibrary::SphereTraceSingle(GetWorld(), TopTraceStartPoint, TopEndTrace, CapsuleRadius, ETraceTypeQuery::TraceTypeQuery1, true, TopTraceIgnoredActors, EDrawDebugTrace::ForOneFrame, TopTraceHitResult, true);
-#else
-	const bool bTopTraceHit = UKismetSystemLibrary::SphereTraceSingle(GetWorld(), TopTraceStartPoint, TopEndTrace, CapsuleRadius, ETraceTypeQuery::TraceTypeQuery1, true, TopTraceIgnoredActors, EDrawDebugTrace::None, TopTraceHitResult, true);
-#endif
-	if (!bTopTraceHit)
-		return;
-	
-	const FVector EdgeLocation = FVector(FrontTraceHitResult.ImpactPoint.X, FrontTraceHitResult.ImpactPoint.Y, TopTraceHitResult.ImpactPoint.Z);
-#ifdef _DEBUG_VAULTING
-	DrawDebugPoint(GetWorld(), EdgeLocation, 20.f, FColor::Orange);
-#endif
-	const FVector DirFwdImpToEdge = EdgeLocation - FrontTraceHitResult.ImpactPoint;
-	const float DistFwdImpactPointToEdge = DirFwdImpToEdge.Size();
-	const float DistPlayerToFwdImpactPoint = (FrontTraceHitResult.ImpactPoint - ThisLocation).Size();
-
-	const FVector CharacterNeckLocation = GetMesh()->GetBoneLocation(CharacterSpine2);
-	const FVector CharacterNeckCapsuleEndLocation = CharacterNeckLocation - FrontTraceHitResult.ImpactNormal * CapsuleRadius;
-#ifdef _DEBUG_VAULTING
-	DrawDebugPoint(GetWorld(), CharacterNeckCapsuleEndLocation, 20.f, FColor::Blue);
-#endif
-	const bool bInsidePlayerRadius = DistPlayerToFwdImpactPoint <= CapsuleRadius+1.f;
-	const bool bCanReachEdge = (EdgeLocation - CharacterNeckCapsuleEndLocation).Size() < 15.f;
-
-	const FVector WallFwdNormal = FrontTraceHitResult.ImpactNormal;
-	const FVector TargetLocation = FrontTraceHitResult.ImpactPoint + ThisForward * CapsuleRadius;
-
-	if (bInsidePlayerRadius && bCanReachEdge && GetCharacterMovement()->IsFalling())
-	{
-		TryEnterVaultingTransition(TopTraceHitResult.ImpactPoint);
-	}
-}
-
-void APlayerBase::TryEnterVaultingTransition(const FVector& EndPoint)
-{
-	if (_CustomMovementMode == CustomMovementModes::Default || _CustomMovementMode == CustomMovementModes::Grappling)
-	{
-		const FVector DirToVaultTarget = EndPoint - GetActorLocation();
-		const FRotator RotationToTarget = (DirToVaultTarget / DirToVaultTarget.Size()).Rotation();
-		SetActorRotation({ 0.f, RotationToTarget.Yaw, 0.f });
-		_CustomMovementMode = CustomMovementModes::Vaulting;
-	}
-}
-
-void APlayerBase::StartVaulting()
-{
-	GetCharacterMovement()->SetMovementMode(EMovementMode::MOVE_Flying);
-	_CustomMovementMode = CustomMovementModes::Vaulting;
-	
-	if (_HookCurrentState != HookCurrentState::GrappleDetached)
-		HookDetach();
-}
-
-void APlayerBase::EndVaulting()
-{
-	GetCapsuleComponent()->SetCapsuleHalfHeight(CapsuleDefaultStandingHeight);
-	GetCharacterMovement()->SetMovementMode(EMovementMode::MOVE_Walking);
-	if (_CustomMovementMode == CustomMovementModes::Vaulting)
-	{
-		_CustomMovementMode = CustomMovementModes::Default;
-	}
-}
-
-void APlayerBase::SwordStartAttack()
-{
-	if (SwordPtr && _CustomMovementMode == CustomMovementModes::Attacking)
-	{
-		if (Controller)
-		{
-			const auto PlayerController = Cast<APlayerController>(Controller);
-			if(PlayerController)
-			{
-				FHitResult FHit;
-				PlayerController->GetHitResultUnderCursor(ECollisionChannel::ECC_Visibility, false, FHit);
-
-				const auto ImpactPoint = FHit.ImpactPoint;
-				const auto ThisLocation = GetActorLocation();
-				const auto ThisLocToImpact = ImpactPoint - ThisLocation;
-				const auto DirToImpact = (ThisLocToImpact / ThisLocToImpact.Size()).GetSafeNormal2D();
-				const auto Rotation = DirToImpact.Rotation();
-				SetActorRotation(Rotation);
-			}		
-		}
-		GetCharacterMovement()->DisableMovement();
-		GetCharacterMovement()->StopActiveMovement();
-		SwordPtr->StartSwing();
-		_AttackState = AttackState::Attack1;	
-		HookDelayTimer = 0.f;
-	}
-}
-
-void APlayerBase::SwordEndAttack()
-{
-	if (_CustomMovementMode == CustomMovementModes::Attacking)
-	{
-		GetCharacterMovement()->SetMovementMode(EMovementMode::MOVE_Walking);
-		_CustomMovementMode = CustomMovementModes::Default;
-	}
-	if (SwordPtr)
-	{
-		SwordPtr->EndSwing();
-	}
-	AttackPressedWhileSwinging = 0;
-	AttackCurrentComboNR = 0;
-	bCanTransitionToAttack2 = false;
-	bCanTransitionToAttack1 = false;
-	HookDelayTimer = HookMaxDelay;
-	_AttackState = AttackState::Default;
 }
 
 void APlayerBase::CameraUpdate(const float DeltaTime)
@@ -217,11 +106,8 @@ void APlayerBase::CameraUpdate(const float DeltaTime)
 	CameraRotationUpdate(DeltaTime);
 }
 
-void APlayerBase::CameraPositionUpdate(const float DeltaTime)
+void APlayerBase::CameraPositionUpdate(const float DeltaTime) const
 {
-	if (!Controller)
-		return;
-
 	const auto PlayerController = Cast<APlayerController>(Controller);
 	if (!PlayerController)
 		return;
@@ -278,14 +164,12 @@ void APlayerBase::CameraPositionUpdate(const float DeltaTime)
 #endif
 }
 
-void APlayerBase::CameraMoveTo2DDirection(const FVector2D& Dir, const float DeltaTime)
+void APlayerBase::CameraMoveTo2DDirection(const FVector2D& Dir, const float DeltaTime) const
 {
 #ifdef _DEBUG_UPDATE_CAMERA
 	UE_LOG(LogTemp, Warning, TEXT("target offset: %s"), *SpringArm->TargetOffset.ToString());
 #endif
-	const FRotator SpringArmYawRotation = {0.f, SpringArm->GetRelativeRotation().Yaw, 0.f};
-	const FQuat SpringArmYawQuaternion = SpringArmYawRotation.Quaternion();
-	
+	const FQuat SpringArmYawQuaternion = FRotator{0.f, SpringArm->GetRelativeRotation().Yaw, 0.f}.Quaternion();
 	const FVector Dir3D = FVector(Dir.Y, Dir.X, 0.f);
 	const FVector Dir3DVelocity = (Dir3D * CameraLerpToSpeed * DeltaTime);
 	const FVector Dir3DVelocityTransformed = SpringArmYawQuaternion.RotateVector(Dir3DVelocity);
@@ -309,10 +193,9 @@ void APlayerBase::CameraMoveTo2DDirection(const FVector2D& Dir, const float Delt
 	SpringArm->TargetOffset = NewLocation;
 }
 
-void APlayerBase::CameraMoveToPlayer(const float DeltaTime)
+void APlayerBase::CameraMoveToPlayer(const float DeltaTime) const
 {
-	const FVector NewLocation = FVector(CameraInitialPosition);
-	SpringArm->TargetOffset = FMath::Lerp(SpringArm->TargetOffset, NewLocation, CameraLerpBackSpeed* DeltaTime);
+	SpringArm->TargetOffset = FMath::Lerp(SpringArm->TargetOffset, CameraInitialPosition, CameraLerpBackSpeed* DeltaTime);
 }
 
 void APlayerBase::CameraRotationUpdate(const float DeltaTime)
@@ -321,11 +204,11 @@ void APlayerBase::CameraRotationUpdate(const float DeltaTime)
 		return;
 
 	if (AssociatedTriggerBox->Reverse)
-	{	
+	{
 		const auto CameraRotation = SpringArm->GetRelativeRotation();
 		const auto NewRotation = FMath::Lerp(CameraRotation, AssociatedTriggerBox->EndOverlapRotation, AssociatedTriggerBox->RotationSpeed * DeltaTime);
 		SpringArm->SetRelativeRotation(NewRotation);
-		if (NewRotation.Equals(CameraInitialRotation, 1.f))
+		if (NewRotation.Equals(AssociatedTriggerBox->EndOverlapRotation, 1.f))
 		{
 			AssociatedTriggerBox->Reverse = false;
 			AssociatedTriggerBox = nullptr;		
@@ -333,7 +216,7 @@ void APlayerBase::CameraRotationUpdate(const float DeltaTime)
 	}
 	else if (AssociatedTriggerBox->bOnBeginOverlapRotation)
 	{
-		const auto CameraRotation = SpringArm->GetRelativeRotation();
+		const auto CameraRotation = SpringArm->GetRelativeRotation();	
 		const auto NewRotation = FMath::Lerp(CameraRotation, AssociatedTriggerBox->BeginOverlapRotation, AssociatedTriggerBox->RotationSpeed * DeltaTime);
 		SpringArm->SetRelativeRotation(NewRotation);
 		if (NewRotation.Equals(AssociatedTriggerBox->BeginOverlapRotation, 1.f) && !AssociatedTriggerBox->bOnEndOverlapRotation)
@@ -343,6 +226,246 @@ void APlayerBase::CameraRotationUpdate(const float DeltaTime)
 	}
 }
 
+
+FVector2D APlayerBase::GetPlayerToMouseDirScreenSpace2D() const
+{
+	const auto PlayerController = Cast<APlayerController>(Controller);
+	if (!PlayerController)
+		return FVector2D::ZeroVector;
+
+	float x, y;
+	if (!PlayerController->GetMousePosition(x, y))
+		return FVector2D::ZeroVector;
+
+	int32 Width, Height;
+	PlayerController->GetViewportSize(Width, Height);
+	const float FWidth = static_cast<float>(Width);
+	const float FHeight = static_cast<float>(Height);
+	const float AspectRatio = FWidth / FHeight;
+	float XScale = x / FWidth;
+	float YScale = y / FHeight;
+	YScale = 1.f - YScale;
+	YScale = (2.f * YScale) - 1.f;
+	XScale = (2.f * XScale) - 1.f;
+	XScale *= AspectRatio;
+	const FRotator SpringArmYawRotation = { 0.f, SpringArm->GetRelativeRotation().Yaw, 0.f };
+	const FQuat SpringArmYawQuaternion = SpringArmYawRotation.Quaternion();
+	const FVector2D MousePos2D = { XScale,  YScale };
+
+	FVector2D PlayerPosScreen{ FVector2D::ZeroVector };
+	PlayerController->ProjectWorldLocationToScreen(GetActorLocation(), PlayerPosScreen);
+	PlayerPosScreen.X /= FWidth;
+	PlayerPosScreen.Y /= FHeight;
+	PlayerPosScreen.Y = 1.f - PlayerPosScreen.Y;
+	PlayerPosScreen.X = (PlayerPosScreen.X * 2.f) - 1.f;
+	PlayerPosScreen.X *= AspectRatio;
+	PlayerPosScreen.Y = (PlayerPosScreen.Y * 2.f) - 1.f;
+
+	FVector2D PlayerToMouse = (MousePos2D - PlayerPosScreen);
+	PlayerToMouse = PlayerToMouse.GetSafeNormal();
+	
+	FVector MouseDir3D = { PlayerToMouse.Y, PlayerToMouse.X, 0.f };
+	MouseDir3D = SpringArmYawQuaternion.RotateVector(MouseDir3D);
+	const FVector2D Result = { MouseDir3D.X, MouseDir3D.Y };
+
+	
+#ifdef  _DEBUG_MOUSEDIR
+	UE_LOG(LogTemp, Warning, TEXT("MousePos X: %f   -    MousePos Y: %f"), MousePos2D.X, MousePos2D.Y);
+	UE_LOG(LogTemp, Warning, TEXT("Player X: %f   -    Player Y: %f"), PlayerPosScreen.X, PlayerPosScreen.Y);
+	UE_LOG(LogTemp, Warning, TEXT("MouseToPlayer X: %f   -    MouseToPlayer Y: %f"), PlayerToMouse.X, PlayerToMouse.Y);
+	UE_LOG(LogTemp, Warning, TEXT("Result X: %f   -    Result Y: %f"), Result.X, Result.Y);
+#endif
+	return Result;
+}
+
+FVector APlayerBase::GetPlayerToMouseDirScreenSpace3D() const
+{
+	const FVector2D Dir2D = GetPlayerToMouseDirScreenSpace2D();
+	return { Dir2D.X, Dir2D.Y, 0.f };
+}
+
+FRotator APlayerBase::GetPlayerToMouseYawScreenSpace() const
+{
+	const auto Rot = GetPlayerToMouseDirScreenSpace3D().Rotation();
+	return { 0.f, Rot.Yaw, 0.f };
+}
+
+FVector APlayerBase::CalculateGrappleFireDirection() const
+{
+	FVector DirToTarget{ FVector::ForwardVector };
+	const auto PlayerController = Cast<APlayerController>(GetController());
+	if (!Hook || !PlayerController)
+		return DirToTarget;
+	
+	TArray<TEnumAsByte<EObjectTypeQuery>> ObjectQuery;
+	TArray<TEnumAsByte<EObjectTypeQuery>> ObjectQueryComplex;
+	ObjectQuery.Push(ObjectTypeQuery8);
+	ObjectQueryComplex.Push(ObjectTypeQuery10);
+	
+	const auto HookLocation = Hook->GetActorLocation();
+	
+	const auto HookToTarget = [&DirToTarget, &HookLocation](const FVector& Target)
+	{
+		DirToTarget = Target - HookLocation;
+		return DirToTarget /= DirToTarget.Size();
+	};
+
+	FHitResult FHitCursor; //Will try to search for complex collision first because not all grapple plants will have hit boxes.
+	if (PlayerController->GetHitResultUnderCursorForObjects(ObjectQueryComplex, true, FHitCursor))
+	{
+		UE_LOG(LogTemp, Warning, TEXT("Complex collision hit, name: %s"), *FHitCursor.Actor->GetName());
+		//Get the grapple point if it has this component
+		if (auto TraceComponent = FHitCursor.GetActor()->FindComponentByClass<UGrappleTraceComponent>())
+		{
+			UE_LOG(LogTemp, Warning, TEXT("Complex collision UGrappleTraceComponent hit, name: %s"), *FHitCursor.Actor->GetName());
+			return HookToTarget(TraceComponent->GrapplePoint->GetComponentLocation());
+		}
+
+		if (auto TraceComponent = FHitCursor.GetActor()->FindComponentByClass<UGrappleTracer>())
+		{
+			UE_LOG(LogTemp, Warning, TEXT("Complex collision UGrappleTracer hit, name: %s"), *FHitCursor.Actor->GetName());
+			return HookToTarget(TraceComponent->GrapplePoint->GetComponentLocation());
+		}
+		
+		return HookToTarget(FHitCursor.ImpactPoint);
+	}
+	//Do a hit box check, will not wrap this around complex collision
+	if (PlayerController->GetHitResultUnderCursorForObjects(ObjectQuery, false, FHitCursor))
+	{
+		if (auto TraceComponent = FHitCursor.GetActor()->FindComponentByClass<UGrappleTraceComponent>())
+			return HookToTarget(TraceComponent->GrapplePoint->GetComponentLocation());
+		if (auto TraceComponent = FHitCursor.GetActor()->FindComponentByClass<UGrappleTracer>())
+			return HookToTarget(TraceComponent->GrapplePoint->GetComponentLocation());
+	}
+
+	FVector MouseWorldLocation{FVector::ZeroVector}, MouseWorldDirection{FVector::ZeroVector};
+	PlayerController->DeprojectMousePositionToWorld(MouseWorldLocation, MouseWorldDirection);
+	MouseWorldDirection.Z *= MouseWorldDirection.Z > 0.f ? -1.f : 1.f;//Handle parallel, and it should not be positive.
+	MouseWorldDirection.Z -= MouseWorldDirection.Z == 0.f ? 0.1f : 0.f;
+	const FPlane Plane(FVector::UpVector, GetActorLocation().Z);
+	
+#ifdef _DEBUG_CALCULATE_GRAPPLE_FIRE_DIRECTION
+	DrawDebugLine(GetWorld(), MouseWorldLocation, MouseWorldLocation + MouseWorldDirection* 2000.f, FColor::Green, true, 5.f, 0, 2.f);
+#endif	
+	const auto PlaneImpactPoint = FMath::RayPlaneIntersection(MouseWorldLocation, MouseWorldDirection, Plane);
+#ifdef _DEBUG_CALCULATE_GRAPPLE_FIRE_DIRECTION
+	DrawDebugPoint(GetWorld(), PlaneImpactPoint, 10.f, FColor::Red, true, 2.f, 0);
+#endif
+	auto HookToMouseDir = HookToTarget(PlaneImpactPoint);
+	const float StartPos = 300.f;
+	const auto TraceStart = HookLocation + HookToMouseDir * StartPos;
+	const auto TraceEnd = HookLocation + HookToMouseDir * (HookMaxRange - StartPos);
+	
+	//Aim assist
+	const FVector& BoxHalfSize = AimAssistBoundingBox;
+	const TArray<AActor*> IgnoreActors; TArray<FHitResult> HitActors;
+	
+	if (bShowAimAssistBoundingBox)
+		UKismetSystemLibrary::BoxTraceMultiForObjects(GetWorld(), TraceStart, TraceEnd, BoxHalfSize, HookToMouseDir.Rotation(), ObjectQuery, false, IgnoreActors, EDrawDebugTrace::ForDuration, HitActors, false, FLinearColor::Red, FLinearColor::Green, 1.f);
+	else
+		UKismetSystemLibrary::BoxTraceMultiForObjects(GetWorld(), TraceStart, TraceEnd, BoxHalfSize, HookToMouseDir.Rotation(), ObjectQuery, false, IgnoreActors, EDrawDebugTrace::None, HitActors, false, FLinearColor::Red, FLinearColor::Green, 1.f);
+
+	float MinDistance = FLT_MAX;
+	AActor* BlockingActor{ nullptr };
+	for (const auto Hit : HitActors)
+	{
+		const auto ImpactPoint = Hit.ImpactPoint;
+		auto DistanceToLine = FMath::ClosestPointOnLine(TraceStart, TraceEnd, ImpactPoint).Size();
+		if (DistanceToLine < MinDistance)
+		{
+			MinDistance = DistanceToLine;
+			BlockingActor = Hit.GetActor();
+		}
+	}
+	if (BlockingActor)
+	{
+		
+		const UGrappleTraceComponent* GTC = BlockingActor->FindComponentByClass<UGrappleTraceComponent>();
+		if (GTC)
+			return HookToTarget(GTC->GrapplePoint->GetComponentLocation());
+		
+		const UGrappleTracer* GT = BlockingActor->FindComponentByClass<UGrappleTracer>();
+		if (GT)
+			return HookToTarget(GT->GrapplePoint->GetComponentLocation());
+			
+	}
+
+	return HookToMouseDir;
+}
+void APlayerBase::VaultingUpdate(const float DeltaTime)
+{
+	if (CustomMovementModes::Vaulting == _CustomMovementMode)
+	{
+		const FVector CharacterTopPoint = GetMesh()->GetBoneLocation(CharacterTopBone);
+		const FVector CharacterLowPoint = GetMesh()->GetBoneLocation(CharacterBotBone);
+		const float CharacterHeight = (CharacterTopPoint - CharacterLowPoint).Size();
+		const float CharacterHalfHeight = CharacterHeight * 0.5f;
+		GetCapsuleComponent()->SetCapsuleHalfHeight(CharacterHalfHeight);
+	}
+}
+
+void APlayerBase::TryEnterVaultingTransition(const FVector& EndPoint)
+{
+	if (CompareCustomMovement(CustomMovementModes::Default) || CompareCustomMovement(CustomMovementModes::Grappling))
+	{
+		const FVector DirToVaultTarget = EndPoint - GetActorLocation();
+		const FRotator RotationToTarget = (DirToVaultTarget / DirToVaultTarget.Size()).Rotation();
+		SetActorRotation({ 0.f, RotationToTarget.Yaw, 0.f });
+		SetCustomMovement(CustomMovementModes::Vaulting);
+	}
+}
+
+void APlayerBase::StartVaulting()
+{
+	GetCharacterMovement()->SetMovementMode(EMovementMode::MOVE_Flying);
+	SetCustomMovement(CustomMovementModes::Vaulting);
+
+	if (!CompareHookState(HookCurrentState::GrappleDetached))
+		HookDetach();
+}
+
+void APlayerBase::EndVaulting()
+{
+	GetCapsuleComponent()->SetCapsuleHalfHeight(CapsuleDefaultStandingHeight);
+	GetCharacterMovement()->SetMovementMode(EMovementMode::MOVE_Walking);
+
+	if (CompareCustomMovement(CustomMovementModes::Vaulting))
+		SetCustomMovement(CustomMovementModes::Default);
+}
+
+void APlayerBase::SwordStartAttack()
+{
+	if (SwordPtr && CompareCustomMovement(CustomMovementModes::Attacking))
+	{
+		SetAttackState(AttackState::Attack1);
+		SwordPtr->StartSwing();
+		HookDelayTimer = 0.f;
+		GetCharacterMovement()->MaxWalkSpeed = SwordAttackWalkSpeed;
+	}
+}
+
+void APlayerBase::SwordEndAttack()
+{
+#ifdef _DEBUG_SWORD
+	UE_LOG(LogTemp, Warning, TEXT("Sword attack end"));
+#endif
+
+	GetCharacterMovement()->MaxWalkSpeed = InitialPlayerSpeed;
+	if (SwordPtr && CompareCustomMovement(CustomMovementModes::Attacking))
+	{
+		GetCharacterMovement()->SetMovementMode(EMovementMode::MOVE_Walking);
+
+		SwordPtr->EndSwing();
+
+		AttackPressedWhileSwinging = 0;
+		AttackCurrentComboNR = 0;
+		HookDelayTimer = HookMaxDelay;
+
+		SetCustomMovement(CustomMovementModes::Default);
+		SetAttackStateTransition(AttackStateTransition::Default);
+		SetAttackState(AttackState::Default);
+	}
+}
 void APlayerBase::OnBeginCameraTrigger(ACameraRotateTrigger* Trigger)
 {
 	if (AssociatedTriggerBox)
@@ -350,7 +473,7 @@ void APlayerBase::OnBeginCameraTrigger(ACameraRotateTrigger* Trigger)
 	AssociatedTriggerBox = Trigger;
 }
 
-void APlayerBase::OnEndCameraTrigger(ACameraRotateTrigger* Trigger)
+void APlayerBase::OnEndCameraTrigger(ACameraRotateTrigger* Trigger) const
 {
 	if (AssociatedTriggerBox == Trigger)
 		AssociatedTriggerBox->Reverse = true;
@@ -394,7 +517,6 @@ void APlayerBase::OnVaultingEnd_TransitionInterrupted()
 #ifdef _DEBUG_ANIM_NOTIFY
 	UE_LOG(LogTemp, Warning, TEXT("OnVaultingEnd_TransitionInterrupted"));
 #endif
-
 }
 
 void APlayerBase::OnVaultingEnd_TransitionEnd()
@@ -402,20 +524,18 @@ void APlayerBase::OnVaultingEnd_TransitionEnd()
 #ifdef _DEBUG_ANIM_NOTIFY
 	UE_LOG(LogTemp, Warning, TEXT("OnVaultingEnd_TransitionEnd"));
 #endif
-
 }
 
 void APlayerBase::TryEnterSwordAttackTransition()
-{
-	if (_CustomMovementMode == CustomMovementModes::Attacking)
-	{		
+{	
+	if (!CompareHookState(HookCurrentState::GrappleDetached))
+		return;
+	
+	if (CompareCustomMovement(CustomMovementModes::Attacking))
 		HandleAttackCombo();
-		AttackPressedWhileSwinging++;
-	}
-	if (_CustomMovementMode == CustomMovementModes::Default && !GetCharacterMovement()->IsFalling())
-	{
-		_CustomMovementMode = CustomMovementModes::Attacking;
-	}	
+	
+	if (CompareCustomMovement(CustomMovementModes::Default) && !GetCharacterMovement()->IsFalling())
+		SetCustomMovement(CustomMovementModes::Attacking);
 }
 
 void APlayerBase::OnSwordAttackBegin_TransitionStart()
@@ -464,79 +584,83 @@ void APlayerBase::OnSwordAttackEnd_TransitionEnd()
 #endif
 	SwordEndAttack();
 }
+void APlayerBase::SetAttackStateTransition(AttackStateTransition::AttackStateTransition NewState)
+{
+	_AttackStateTransition = NewState;
+}
+
+void APlayerBase::SetAttackState(AttackState::AttackState NewState)
+{
+	_AttackState = NewState;
+}
+
+bool APlayerBase::CompareAttackState(AttackState::AttackState NewState) const
+{
+	return _AttackState == NewState;
+}
+
+bool APlayerBase::CompareAttackStateTransition(AttackStateTransition::AttackStateTransition NewState) const
+{
+	return NewState == _AttackStateTransition;
+}
 
 void APlayerBase::HandleAttackCombo()
 {
-	if (AttackPressedWhileSwinging == AttackCurrentComboNR)
+	if (!SwordPtr)
+		return;
+
+	AttackPressedWhileSwinging++;
+	
+	switch (_AttackState)
 	{
-		if (_AttackState == AttackState::Attack1)
+		case AttackState::Attack1:
 		{
-			if (bAttack1WindowOpen)
-			{
-				AttackCurrentComboNR++;
-				_AttackState = AttackState::Attack2;
-				bCanTransitionToAttack2 = true;
-				bCanTransitionToAttack1 = false;
-				HookDelayTimer = 0.f;
-				if (SwordPtr)
-					SwordPtr->ComboSwing();
-			}
-		}else if (_AttackState == AttackState::Attack2)
-		{
-			if (bAttack2WindowOpen)
-			{
-				AttackCurrentComboNR++;
-				_AttackState = AttackState::Attack1;
-				bCanTransitionToAttack1 = true;
-				bCanTransitionToAttack2 = false;
-				HookDelayTimer = 0.f;
-				if (SwordPtr)
-					SwordPtr->ComboSwing();
-			}
+			SetAttackStateTransition(AttackStateTransition::Attack2);
+			AttackCurrentComboNR++;
+			SwordPtr->ComboSwing();
 		}
+		break;
+		case AttackState::Attack2:
+		{
+			SetAttackStateTransition(AttackStateTransition::Attack1);
+			AttackCurrentComboNR++;
+			SwordPtr->ComboSwing();
+		}
+		break;
+		default:
+		break;
 	}
 }
 
-void APlayerBase::OnAttack1StartWindow()
+void APlayerBase::OnAttack1End()
 {
-	bAttack1WindowOpen = true;
+	if (CompareAttackStateTransition(AttackStateTransition::Attack2))
+		SetAttackState(AttackState::Attack2);
 }
 
-void APlayerBase::OnAttack1EndWindow()
+void APlayerBase::OnAttack2End()
 {
-	bAttack1WindowOpen = false;
+	if (CompareAttackStateTransition(AttackStateTransition::Attack1))
+		SetAttackState(AttackState::Attack1);
 }
 
 bool APlayerBase::IsAttack1() const
 {
-	return _AttackState == AttackState::Attack1;
+	return CompareAttackState(AttackState::Attack1);
 }
 
 bool APlayerBase::CanTransitionToAttack1() const
 {
-	return bCanTransitionToAttack1;
-}
-
-void APlayerBase::OnAttack2StartWindow()
-{
-	bAttack2WindowOpen = true;
-}
-
-void APlayerBase::OnAttack2EndWindow()
-{
-	bAttack2WindowOpen = false;
+	return CompareAttackStateTransition(AttackStateTransition::Attack1);
 }
 
 bool APlayerBase::IsAttack2() const
 {
-	return _AttackState == AttackState::Attack2;
+	return CompareAttackState(AttackState::Attack2);
 }
-
 
 void APlayerBase::HookUpdate(const float DeltaTime)
 {
-	HookSpawnLocation = GetActorLocation() + GetActorForwardVector() * 20.f;
-	
 	if (HookCurrentState::GrappleDetached == _HookCurrentState)
 	{
 		HookDelayTimer += DeltaTime;
@@ -545,154 +669,133 @@ void APlayerBase::HookUpdate(const float DeltaTime)
 
 	if (!Hook)
 		return;
-
+	
 	//Out of range scenario
-	if (HookMaxRange < GetDistanceToHook())
-	{
-		_HookCurrentState = HookCurrentState::GrappleReturn;
-	}
+	if (HookMaxRange < GetDistanceToHook() && !CompareHookState(HookCurrentState::GrappleTo))
+		SetHookState(HookCurrentState::GrappleReturn);
 
 	if (HookDetachTimer < 0.f)
 	{
 		HookDelete();
 		return;
-	}
-
+	}	
 	HookDetachTimer -= DeltaTime;
-	
-	auto DirectionToHook = GetDirectionToHook();
-	DirectionToHook /= DirectionToHook.Size();
-	const FRotator Rotation = { 0.f, DirectionToHook.Rotation().Yaw, 0.f };
 
 	switch (_HookCurrentState)
 	{
-	case HookCurrentState::GrappleTo:
-	{
-		SetActorRotation(Rotation);	
-		GetCharacterMovement()->Velocity += CalculatePlayerVelocityWhileRetracting(DeltaTime);
-		if (GetDistanceToHook() < HookInRange)
+		case HookCurrentState::GrappleTo:
 		{
-			HookDelete();
+			GrappleTo(DeltaTime);
 		}
-	}
-	break;
-	case HookCurrentState::GrappleReturn:
-	{
-		Hook->GetCollisionComponent()->SetWorldRotation(DirectionToHook.Rotation());
-		Hook->GetProjectileMovementComponent()->Velocity = -DirectionToHook * HookReturnSpeed;
-
-		if (GetDistanceToHook() < HookInRange)
+		break;
+		case HookCurrentState::GrappleReturn:
 		{
-			if (AttachedComponent)
-			{
-				AttachedComponent->DetachFromComponent(FDetachmentTransformRules::KeepWorldTransform);
-				AttachedComponent->SetWorldLocation(GetActorLocation() + GetActorForwardVector() * 120.f);
-				AttachedComponent->AttachToComponent(GetCapsuleComponent(), FAttachmentTransformRules::KeepWorldTransform);
-			}
-			HookDelete();
+			GrappleReturn(DeltaTime);	
 		}
-	}
-	break;
-	default:
+		break;
+		default:
 		break;
 	}
+
+	
 }
 
 void APlayerBase::HookFire()
 {
-	if (!HookCanFire())
+	if (!Hook || !CompareHookState(HookCurrentState::GrappleFired))
 		return;
-	if (CustomMovementModes::Default != _CustomMovementMode)
+	
+	HookDelayTimer = 0.f;
+	const auto PlayerController = Cast<APlayerController>(GetController());
+	ReturnIfNull(PlayerController);
+
+#ifdef SREENSPACEGRAPPLEDIR
+	const auto MouseToPlayerDir = GetMouseScreenDirection();
+	const FVector Direction = { MouseToPlayerDir.X, MouseToPlayerDir.Y, 0.f };
+#else
+	const auto Dir = CalculateGrappleFireDirection();
+	//UE_LOG(LogTemp, Warning, TEXT("Fired: %s"), *Dir.ToString());
+#endif
+		
+	ShadowProjectionCamera->HideActorComponents(Hook);
+	Hook->GetCollisionComponent()->DetachFromComponent(FDetachmentTransformRules::KeepWorldTransform);
+	Hook->GetProjectileMovementComponent()->bRotationFollowsVelocity = true;
+	Hook->GetProjectileMovementComponent()->SetUpdatedComponent(Hook->GetCollisionComponent());
+	Hook->SetMeshRotation({ 90.f, 0.f, 180.f });
+	Hook->ShootDirection(Dir);
+	GrappleCable->SetVisibility(true);
+	SetHookState(HookCurrentState::GrappleInAir);
+	Hook->GetCollisionComponent()->SetCollisionEnabled(ECollisionEnabled::QueryAndPhysics);
+
+#ifdef _DEBUG_GRAPPLE
+			UE_LOG(LogTemp, Error, TEXT("Shooting attached component"));
+#endif
+
+		
+}
+
+void APlayerBase::TryEnterHookFireTransition()
+{
+	if (!CompareCustomMovement(CustomMovementModes::Default))
 		return;
 
 	if (HookDelayTimer <= HookMaxDelay)
 		return;
 
-	if (!Hook)
-	{
-		HookDelayTimer = 0.f;
-		const auto PlayerController = Cast<APlayerController>(GetController());
-		if (PlayerController)
-		{
-			FHitResult HitResult;
-			PlayerController->GetHitResultUnderCursor(ECC_Visibility, false, HitResult);
-
-			const FVector ImpactPoint = HitResult.ImpactPoint;
-			const FVector ThisLocation = GetActorLocation();
-			const FVector DirectionToImpactPoint = ImpactPoint - ThisLocation;
-			const FVector Direction = (DirectionToImpactPoint / DirectionToImpactPoint.Size()).GetSafeNormal2D();
-			const FRotator Rotation = Direction.Rotation();
-
-			const FVector HookSpawn = GetMesh()->GetBoneLocation(CharacterHips) + (Direction * 200.f);
-			//const FRotator HookRotation = GetActorForwardVector().Rotation();
-
-			FActorSpawnParameters Params;
-			Params.Owner = this;
-			Params.Instigator = this;
-
-			Hook = GetWorld()->SpawnActor<AHookProjectile>(HookProjectileClass, HookSpawn, Rotation, Params);
-			Hook->GetCollisionComponent()->SetupAttachment(RootComponent);
-			Hook->GetProjectileMovementComponent()->InitialSpeed = HookFireSpeed;
-			Hook->GetProjectileMovementComponent()->MaxSpeed = HookFireSpeed;
-			Hook->GetProjectileMovementComponent()->Velocity = Direction * HookFireSpeed;
-			GrappleCable->SetAttachEndToComponent(Hook->GetCableAttachmentPoint());
-			GrappleCable->SetVisibility(true);
-
-			//Make sure this is before ShootGrabbedComponent
-			_HookCurrentState = HookCurrentState::GrappleFired;
-			_CustomMovementMode = CustomMovementModes::Grappling;
-			if (AttachedComponent)
-			{
-#ifdef _DEBUG_GRAPPLE
-				UE_LOG(LogTemp, Error, TEXT("Shooting attached component"));
-#endif
-				AttachedComponent->DetachFromComponent(FDetachmentTransformRules::KeepWorldTransform);
-				AttachedComponent->AttachToComponent(Hook->GetCollisionComponent(), FAttachmentTransformRules::KeepWorldTransform);
-
-				_HookCurrentState = HookCurrentState::GrappleFiredWithObject;
-
-			}
-		}
-
-	}
+	SetHookState(HookCurrentState::GrappleFired);
+	SetCustomMovement(CustomMovementModes::Grappling);
 }
 
-bool APlayerBase::HookCanFire()
+void APlayerBase::GrappleTo(const float DeltaTime)
 {
-	/*
-	if (!Controller)
-		return false;
+	const FRotator Rotation = { 0.f, GetRotationToHook().Yaw, 0.f };
+	SetActorRotation(Rotation);
+	CalculatePlayerVelocityWhileRetracting(DeltaTime);
 
-	const auto PlayerController = Cast<APlayerController>(Controller);
-	if (!PlayerController)
-		return false;
-	
-	FHitResult HitResult;
-	PlayerController->GetHitResultUnderCursor(ECC_Visibility, false, HitResult);
+	if (GetDistanceToHook() < HookInRange)
+		HookDelete();
+}
 
-	const FVector ImpactPoint = HitResult.ImpactPoint;
-	const FVector ThisLocation = GetActorLocation();
-	const FVector DirectionToImpactPoint = ImpactPoint - ThisLocation;
-	FVector Direction = DirectionToImpactPoint / DirectionToImpactPoint.Size();
-	Direction.Y = 0.f;
-	FHitResult FHitRay;
-	FCollisionQueryParams Params;
-	Params.AddIgnoredActor(this);
-	if (GetWorld()->LineTraceSingleByChannel(FHitRay, GetActorLocation(), GetActorLocation() + (Direction*HookMaxRange), ECollisionChannel::ECC_Visibility, Params))
-	{
-		UE_LOG(LogTemp, Warning, TEXT("Ray running"));
-		const auto RayImpact = FHitRay.ImpactPoint;
-		const auto Distance = FVector::Dist(RayImpact, ThisLocation);
-		if (Distance < 100.f)
-			return false;
-	}
-	else
-	{
-		UE_LOG(LogTemp, Warning, TEXT("Ray failed"));
-	}
-	
-	*/
-	return true;
+void APlayerBase::GrappleReturn(const float DeltaTime)
+{
+	FVector DirectionToHook = GetDirectionToHook();
+	DirectionToHook /= DirectionToHook.Size();
+
+	Hook->GetCollisionComponent()->SetWorldRotation(DirectionToHook.Rotation());
+	Hook->GetProjectileMovementComponent()->Velocity = -DirectionToHook * (HookReturnSpeed + GetCharacterMovement()->Velocity.Size());
+
+	if (GetDistanceToHook() < HookInRange)
+		HookDelete();
+}
+
+bool APlayerBase::CompareHookState(HookCurrentState::HookCurrentState NewState) const
+{
+	return NewState == _HookCurrentState;
+}
+
+void APlayerBase::SetHookState(HookCurrentState::HookCurrentState NewState)
+{
+	_HookCurrentState = NewState;
+}
+
+HookCurrentState::HookCurrentState APlayerBase::GetHookState() const
+{
+	return _HookCurrentState;
+}
+
+void APlayerBase::SetCustomMovement(CustomMovementModes::CustomMovementModes NewState)
+{
+	_CustomMovementMode = NewState;
+}
+
+CustomMovementModes::CustomMovementModes APlayerBase::GetCustomMovement() const
+{
+	return _CustomMovementMode;
+}
+
+bool APlayerBase::CompareCustomMovement(CustomMovementModes::CustomMovementModes NewState) const
+{
+	return _CustomMovementMode == NewState;
 }
 
 void APlayerBase::GrappleInit()
@@ -700,22 +803,76 @@ void APlayerBase::GrappleInit()
 	HookDelayTimer = 0.f;
 	HookDetachTimer = HookDetachMaxTimer;
 	//Cable Component Related
-	GrappleCable->AttachToComponent(GetCapsuleComponent(), FAttachmentTransformRules::KeepRelativeTransform);
+	GrappleCable->AttachToComponent(GetMesh(), FAttachmentTransformRules::SnapToTargetNotIncludingScale, CharacterHookSpawnPoint);
 	GrappleCable->SetVisibility(false);
 	GrappleCable->bEnableStiffness = true;
 	GrappleCable->NumSegments = 2.f;
 	GrappleCable->SetEnableGravity(false);
+	
+	FActorSpawnParameters Params; const FHitResult Hit;
+	Params.Owner = this;
+	Params.Instigator = this;
+	Hook = GetWorld()->SpawnActor<AHookProjectile>(HookProjectileClass, Params);
+	assert(Hook);
+	Hook->SetSpeed(HookFireSpeed);
+	Hook->AttachToComponent(GetMesh(), FAttachmentTransformRules::SnapToTargetNotIncludingScale, CharacterHookSpawnPoint);
+	Hook->SetMeshRotation({ 90.f, 0.f, 270.f });
+	Hook->GetProjectileMovementComponent()->StopSimulating(Hit);
+	GrappleCable->SetAttachEndToComponent(Hook->GetCableAttachmentPoint());
+	GrappleCable->SetVisibility(false);
 }
 
-void APlayerBase::WidgetInit()
+void APlayerBase::WidgetInit(_Inout_ APlayerController* PlayerController)
 {
-	const auto PlayerController = Cast<APlayerController>(GetController());
-	if (PlayerController)
+	PlayerController->bShowMouseCursor = true;
+	WidgetCursorNotLocked = CreateWidget(PlayerController, WidgetClassCursorNoneLock);
+	WidgetCursorLocked = CreateWidget(PlayerController, WidgetClassCursorLocked);
+	WidgetMenu = CreateWidget(PlayerController, WidgetClassMenu);
+	WidgetSword = CreateWidget(PlayerController, WidgetClassSword);
+	
+	PlayerController->SetMouseCursorWidget(EMouseCursor::Default, WidgetMenu);
+	PlayerController->SetMouseCursorWidget(EMouseCursor::Crosshairs, WidgetCursorLocked);
+	PlayerController->SetMouseCursorWidget(EMouseCursor::CardinalCross, WidgetSword);
+	PlayerController->SetMouseCursorWidget(EMouseCursor::Hand , WidgetCursorNotLocked);
+	
+	PlayerController->DefaultMouseCursor = EMouseCursor::Default;
+	PlayerController->CurrentMouseCursor = EMouseCursor::Default;
+}
+
+void APlayerBase::SetMouseCursor(APlayerController* PlayerController, const EMouseCursor::Type NewType)
+{
+	PlayerController->CurrentMouseCursor = NewType;
+}
+
+void APlayerBase::InteractInit(APlayerControllerBase* PlayerController)
+{
+	const auto PlayerControllerHUDRef = PlayerController->HUD;	
+	if(PlayerControllerHUDRef)
 	{
-		PlayerController->bShowMouseCursor = true;
-		WidgetCursorNotLocked = CreateWidget(PlayerController, WidgetClassCursorNoneLock);
-		PlayerController->SetMouseCursorWidget(EMouseCursor::Crosshairs, WidgetCursorNotLocked);
+		DialogueUIPtr = Cast<UDialogueUI>(CreateWidget(PlayerController, DialogueUIWidget));
 	}
+	
+	if(InteractionPopup)
+	{
+		InteractionWidget = CreateWidget(PlayerController, InteractionPopup);
+		if(InteractionWidget)
+		{
+			InteractionWidget->AddToViewport();
+			InteractionWidget->SetVisibility(ESlateVisibility::Hidden);
+		}
+		else
+		{
+#ifdef _DEBUG_INERACTION
+			UE_LOG(LogTemp, Error, TEXT("NPC Interaction Widget not set"));
+#endif
+		}		
+	}
+}
+
+void APlayerBase::CameraInit()
+{
+	CameraInitialPosition = SpringArm->TargetOffset;
+	CameraInitialRotation = SpringArm->GetRelativeRotation();
 }
 
 void APlayerBase::CharacterInit()
@@ -725,8 +882,12 @@ void APlayerBase::CharacterInit()
 	GetCharacterMovement()->GroundFriction = DefaultGroundFriction;
 	GetCapsuleComponent()->SetCapsuleHalfHeight(CapsuleDefaultStandingHeight);
 	GetCapsuleComponent()->SetCapsuleRadius(CapsuleDefaultRadius);
+	InitialPlayerSpeed = GetCharacterMovement()->MaxWalkSpeed;
+}
 
-	
+void APlayerBase::VaultInit()
+{	
+	VaultBoxExtent->OnComponentBeginOverlap.AddDynamic(this, &APlayerBase::OnVaultBoxBeginOverlap);
 }
 
 void APlayerBase::SwordInit()
@@ -745,59 +906,147 @@ void APlayerBase::SwordInit()
 	}
 }
 
+void APlayerBase::ShadowProjectionInit()
+{
+	TArray<AActor*> CaptureActors, HiddenActors;
+	TArray<TWeakObjectPtr<UPrimitiveComponent>> HiddenComponents;
+	const float ShadowMapTextureSize = 512.f;
+	
+	CaptureActors.Push(this);
+	CaptureActors.Push(SwordPtr);
+	CaptureActors.Push(Hook);
+	HiddenActors.Push(this);
+	HiddenActors.Push(SwordPtr);
+	HiddenActors.Push(Hook);
+	HiddenComponents.Push(GrappleCable);
+	ShadowProjectionTexture->SizeX = ShadowMapTextureSize;
+	ShadowProjectionTexture->SizeY = ShadowMapTextureSize;
+	ShadowProjectionTexture->ClearColor = FLinearColor(0.f, 0.f, 0.f, 1.f);
+	ShadowProjectionTexture->AddressX = TextureAddress::TA_Clamp;
+	ShadowProjectionTexture->AddressY = TextureAddress::TA_Clamp;
+	ShadowProjectionTexture->RenderTargetFormat = ETextureRenderTargetFormat::RTF_R32f;
+	
+	DepthProjectionTexture->SizeX = ShadowProjectionTexture->SizeX;
+	DepthProjectionTexture->SizeY = ShadowProjectionTexture->SizeY;
+	DepthProjectionTexture->ClearColor = ShadowProjectionTexture->ClearColor;
+	DepthProjectionTexture->AddressX = ShadowProjectionTexture->AddressX;
+	DepthProjectionTexture->AddressY = ShadowProjectionTexture->AddressY;
+	DepthProjectionTexture->RenderTargetFormat = ShadowProjectionTexture->RenderTargetFormat;
+	
+	ShadowProjectionCamera->PrimitiveRenderMode = ESceneCapturePrimitiveRenderMode::PRM_UseShowOnlyList;
+	ShadowProjectionCamera->ProjectionType = ECameraProjectionMode::Orthographic;
+	ShadowProjectionCamera->CaptureSource = ESceneCaptureSource::SCS_SceneDepth;
+	ShadowProjectionCamera->ShowOnlyActors = CaptureActors;
+	ShadowProjectionCamera->HiddenComponents = HiddenComponents;
+	ShadowProjectionCamera->OrthoWidth = ShadowMapTextureSize;
+	ShadowProjectionCamera->CustomNearClippingPlane = 0.f;
+	ShadowProjectionCamera->bCaptureEveryFrame = true;
+	ShadowProjectionCamera->bCaptureOnMovement = false;
+	ShadowProjectionCamera->MaxViewDistanceOverride = 10000.f;
+	ShadowProjectionCamera->TextureTarget = ShadowProjectionTexture;
+	
+	DepthProjectionCamera->PrimitiveRenderMode = ESceneCapturePrimitiveRenderMode::PRM_RenderScenePrimitives;
+	DepthProjectionCamera->ProjectionType = ShadowProjectionCamera->ProjectionType;
+	DepthProjectionCamera->CaptureSource = ShadowProjectionCamera->CaptureSource;
+	DepthProjectionCamera->HiddenActors = HiddenActors;
+	DepthProjectionCamera->OrthoWidth = ShadowProjectionCamera->OrthoWidth;
+	DepthProjectionCamera->CustomNearClippingPlane = ShadowProjectionCamera->CustomNearClippingPlane;
+	DepthProjectionCamera->bCaptureEveryFrame = ShadowProjectionCamera->bCaptureEveryFrame;
+	DepthProjectionCamera->bCaptureOnMovement = ShadowProjectionCamera->bCaptureOnMovement;
+	DepthProjectionCamera->MaxViewDistanceOverride = ShadowProjectionCamera->MaxViewDistanceOverride;
+	DepthProjectionCamera->TextureTarget = DepthProjectionTexture;
+}
+
+void APlayerBase::InteractLoad()
+{
+	GetCapsuleComponent()->InitCapsuleSize(42.f, 96.0f);
+	GetCapsuleComponent()->OnComponentBeginOverlap.AddDynamic(this, &APlayerBase::InteractionActive);
+	GetCapsuleComponent()->OnComponentEndOverlap.AddDynamic(this, &APlayerBase::InteractionNotActive);
+
+	bPlayerIsTalking = false;
+	PlayerCanInteract = false;
+	AssociatedNPC = nullptr;
+
+	AudioComp = CreateDefaultSubobject<UAudioComponent>(FName("AudioComp"));
+	AudioComp->SetupAttachment(GetRootComponent());
+
+}
+
+void APlayerBase::CharacterLoad()
+{
+	bUseControllerRotationPitch = false;
+	bUseControllerRotationYaw = false;
+	bUseControllerRotationRoll = false;
+
+	//Make Character move towards input direction
+	GetCharacterMovement()->bOrientRotationToMovement = true;
+	GetCharacterMovement()->RotationRate = FRotator(0.0f, 540.0f, 0.0f); // ...at this rotation rate
+	GetCharacterMovement()->JumpZVelocity = 600.f;
+}
+
 void APlayerBase::HandleDeath()
 {
 	//GetCharacterMovement()->DisableMovement();
 	GetMesh()->SetSimulatePhysics(true);
 	GetMesh()->SetCollisionEnabled(ECollisionEnabled::QueryAndPhysics);
-	//GetMesh()->AddImpulse(GetActorForwardVector() * -10000.f, NAME_None, false);
+	const auto PController = Cast<APlayerController>(GetController());
+	if (PController)
+	{
+		DisableInput(PController);
+		DeadScreen = CreateWidget(PController, DeadScreenClass);
+		DeadScreen->AddToViewport();
+	}
+	GetWorldTimerManager().SetTimer(MyTimerHandle, this, &APlayerBase::RestartLevel, 3.f, false);
+}
+
+void APlayerBase::RestartLevel()
+{
+	const auto PController = Cast<APlayerController>(GetController());
+	if (DeadScreen)
+	{
+		if (DeadScreen->IsInViewport())
+			DeadScreen->RemoveFromViewport();
+	}
+	
+	if (PController)
+	{
+		bRestartGame = true;
+		LoadCheckpoint();
+		/*PController->RestartLevel();*/
+	}
+
+	
+
 }
 
 void APlayerBase::HookDetach()
 {
-	if (_CustomMovementMode == CustomMovementModes::Grappling)
-		_CustomMovementMode = CustomMovementModes::Default;
-	
-	if (HookCurrentState::GrappleDetached == _HookCurrentState)
+	if (HookCurrentState::GrappleDetached == _HookCurrentState || HookCurrentState::GrappleFired == _HookCurrentState || HookCurrentState::GrappleReturn == _HookCurrentState)
 		return;
-
+#ifdef _DEBUG_GRAPPLE
+	UE_LOG(LogTemp, Warning, TEXT("HookDetach"));
+#endif
 	if (Hook)
 	{
-		Hook->GetProjectileMovementComponent()->UpdateComponentVelocity();
 		Hook->GetProjectileMovementComponent()->SetUpdatedComponent(Hook->GetCollisionComponent());
 		Hook->GetProjectileMovementComponent()->bRotationFollowsVelocity = false;
 
-		if (AttachedComponent)
-		{
-			AttachedComponent->DetachFromComponent(FDetachmentTransformRules::KeepWorldTransform);
-			AttachedComponent->SetSimulatePhysics(true);
-			AttachedComponent->SetCollisionEnabled(ECollisionEnabled::QueryAndPhysics);
-			const FVector UnitDirectionToHook = GetDirectionToHook() / GetDirectionToHook().Size();
-			AttachedComponent->SetWorldLocation(Hook->GetCollisionComponent()->GetComponentLocation() + UnitDirectionToHook * 100.f);
-			AttachedComponent->SetPhysicsLinearVelocity(Hook->GetProjectileMovementComponent()->Velocity);
-			GrappleDetachPhysicsComponent();		
-		}
+		GrappleDetachPhysicsComponent();			
 	}
 	_HookCurrentState = HookCurrentState::GrappleReturn;
 }
 
 void APlayerBase::GrappleDetachPhysicsComponent()
 {
-	if (AttachedComponent)
-	{
-		Hook->GetCollisionComponent()->DetachFromComponent(FDetachmentTransformRules::KeepWorldTransform);
-		const auto Actor = AttachedComponent->GetOwner();
-		if (Actor)
-		{
-			if (Actor->IsA(AAIBehaviorBase::StaticClass()))
-			{
-				const auto AIBB = Cast<AAIBehaviorBase>(Actor);
-				if (AIBB)
-					AIBB->OnDetach();
-			}
-		}
-		AttachedComponent = nullptr;		
-	}
+	ReturnIfNull(AttachedComponent);
+	
+	AttachedComponent->DetachFromComponent(FDetachmentTransformRules::KeepWorldTransform);
+	const auto Actor = AttachedComponent->GetOwner();
+	if (Actor)
+		if (const auto AIBB = Cast<AAIBehaviorBase>(Actor))
+			AIBB->OnDetach();
+
+	AttachedComponent = nullptr;		
 }
 
 void APlayerBase::OnFirePressed()
@@ -807,9 +1056,15 @@ void APlayerBase::OnFirePressed()
 
 FVector APlayerBase::GetDirectionToHook() const
 {
+	if (!Hook) return FVector::ZeroVector;
 	const FVector HookLocation = Hook->GetCollisionComponent()->GetComponentLocation();
 	const FVector ThisLocation = GetActorLocation();
 	return HookLocation - ThisLocation;
+}
+
+FRotator APlayerBase::GetRotationToHook() const
+{
+	return GetDirectionToHook().Rotation();
 }
 
 float APlayerBase::GetDistanceToHook() const
@@ -819,16 +1074,24 @@ float APlayerBase::GetDistanceToHook() const
 
 void APlayerBase::HookDelete()
 {
-	GrappleCable->SetAttachEndToComponent(GetCapsuleComponent());
+#ifdef _DEBUG_GRAPPLE
+	UE_LOG(LogTemp, Warning, TEXT("HookDetach"));
+#endif
 	
-	Hook->Destroy();
-	Hook = nullptr;
 	HookDetachTimer = HookDetachMaxTimer;
 	GrappleCable->SetVisibility(false);
-
+	const FHitResult Hit;
+	ShadowProjectionCamera->ClearHiddenComponents();
+	ShadowProjectionCamera->HideComponent(GrappleCable);
+	Hook->GetProjectileMovementComponent()->StopSimulating(Hit);
+	
+	Hook->AttachToComponent(GetMesh(), FAttachmentTransformRules::SnapToTargetNotIncludingScale, CharacterHookSpawnPoint);
+	Hook->SetMeshRotation({ 90.f, 0.f, 270.f });
 	GetCharacterMovement()->AirControl = DefaultAirControl;
 	GetCharacterMovement()->GroundFriction = DefaultGroundFriction;
 
+	GrappleDetachPhysicsComponent();
+	
 	_HookCurrentState = HookCurrentState::GrappleDetached;
 	if (CustomMovementModes::Grappling == _CustomMovementMode)
 	{
@@ -836,7 +1099,7 @@ void APlayerBase::HookDelete()
 	}
 }
 
-const FVector APlayerBase::CalculatePlayerVelocityWhileRetracting(const float DeltaTime)
+void APlayerBase::CalculatePlayerVelocityWhileRetracting(const float DeltaTime)
 {
 	if (!GetCharacterMovement()->IsMovingOnGround())
 	{
@@ -845,11 +1108,11 @@ const FVector APlayerBase::CalculatePlayerVelocityWhileRetracting(const float De
 		GetCharacterMovement()->BrakingFriction = 0.f;
 		GetCharacterMovement()->FallingLateralFriction = 0.f;
 	}
-	
 	const FVector PlayerVelocity = GetCharacterMovement()->Velocity;
 	const FVector DirectionToHook = GetDirectionToHook();
-	const FVector DirToHookUnit = DirectionToHook / DirectionToHook.Size();
+	FVector DirToHookUnit = DirectionToHook / DirectionToHook.Size();
 	const FVector PlayerVelocityDir = PlayerVelocity / PlayerVelocity.Size();
+	
 	
 	if (PlayerVelocity.IsNearlyZero())
 	{
@@ -857,114 +1120,218 @@ const FVector APlayerBase::CalculatePlayerVelocityWhileRetracting(const float De
 		UE_LOG(LogTemp, Warning, TEXT("PlayerVelocity:nearly zero"));
 #endif
 		LaunchCharacter(GetActorUpVector() * HookOnAttachedLaunchForce, false, false);
-		return DirToHookUnit * HookRetractStartSpeed;
+		GetCharacterMovement()->Velocity += DirToHookUnit * HookRetractStartSpeed;
+		return;
 	}
 #ifdef _DEBUG_GRAPPLE
 	DrawDebugLine(GetWorld(), GetActorLocation(), GetActorLocation() + (PlayerVelocityDir * 200.f), FColor::Blue, false, -1, 0, 2.f);
 	DrawDebugLine(GetWorld(), GetActorLocation(), GetActorLocation() + (DirToHookUnit * 200.f), FColor::Red, false, -1, 0, 2.f);
 #endif
-	const float CurrentSpeed = PlayerVelocity.Size();
-	const float DotProj = Dot3(PlayerVelocityDir, DirToHookUnit);
-	const float ProjectedSpeed = DotProj * CurrentSpeed;
+	const float ProjectedSpeed = Dot3(PlayerVelocity, DirToHookUnit);
 #ifdef _DEBUG_GRAPPLE
-	UE_LOG(LogTemp, Warning, TEXT("Currentspeed: %f"), CurrentSpeed);
+	//UE_LOG(LogTemp, Warning, TEXT("Currentspeed: %f"), CurrentSpeed);
 	UE_LOG(LogTemp, Warning, TEXT("ProjectedSpeed: %f"), ProjectedSpeed);
 #endif
-	if (ProjectedSpeed > HookRetractMaxSpeed)
-	{
-		GetCharacterMovement()->Velocity += GetCharacterMovement()->Velocity * -0.1f;
-	}else if (ProjectedSpeed < HookRetractMaxSpeed)
-	{
-		GetCharacterMovement()->Velocity += DirToHookUnit * HookConstantAddSpeed;
-	}
+
 #ifdef _DEBUG_GRAPPLE
-	UE_LOG(LogTemp, Warning, TEXT("DotProj: %f"), DotProj);
+	//UE_LOG(LogTemp, Warning, TEXT("DotProj: %f"), DotProj);
 #endif
 	const float DistanceToHook = DirectionToHook.Size();
 	const float x = DistanceToHook / InitialDistanceToHook;
-	const float a = 60.f;
-	const float b = 200.f;
-	const float c = 0.f;
+	const float a = 300.f;
+	const float b = 1000.f;
+	const float c = 0;
 	const float WishSpeed = QuadraticFormula(x, a, b, c);
-
+	
+	GetCharacterMovement()->Velocity += DirToHookUnit * WishSpeed;
+	
+	if (ProjectedSpeed > HookRetractMaxSpeed)
+	{
+		GetCharacterMovement()->Velocity *= 0.8f;
+	}
+	
 #ifdef _DEBUG_GRAPPLE
 	UE_LOG(LogTemp, Warning, TEXT("WishSpeed: %f"), WishSpeed);
 	UE_LOG(LogTemp, Warning, TEXT("DistanceToHook: %f"), DistanceToHook);
 #endif
-	return DirToHookUnit * WishSpeed;
+	
+	if (DistanceToHook < 150.f)
+	{
+#ifdef _DEBUG_GRAPPLE
+		UE_LOG(LogTemp, Warning, TEXT("Reducing speed"));
+#endif
+		GetCharacterMovement()->Velocity *= 0.1f;
+	}	
 }
 
 float APlayerBase::TakeDamage(float DamageAmount, FDamageEvent const& DamageEvent, AController* EventInstigator,
                               AActor* DamageCauser)
 {
 	const auto IncomingDamage = Super::TakeDamage(DamageAmount, DamageEvent, EventInstigator, DamageCauser);
+
+	OnPlayerKnockBack(DamageCauser->GetActorLocation(), PlayerOnKnockBackValue);
+	
 	CurrentHealth -= FMath::Min(CurrentHealth, IncomingDamage);
 	if (CurrentHealth <= 0.f)
 		HandleDeath();
-	return IncomingDamage;
+	
+	if (DamageCauser->IsA(APowerUpActor::StaticClass()))
+	{
+		float IncomingHealth;
+
+		FString CurrentHealthString;
+		
+		if(IncomingDamage)
+		{
+			IncomingHealth = IncomingDamage;
+			
+			if(CurrentHealth == MaxHealth)
+			{
+				IncomingHealth = 0.f;
+				return IncomingHealth;				
+			}
+			
+			if (IncomingDamage && CurrentHealth <= MaxHealth)
+			{
+				IncomingHealth = IncomingDamage;
+				return IncomingHealth;			
+			}
+
+
+			if ((CurrentHealth+(-IncomingDamage)) >= MaxHealth)
+			{
+				IncomingHealth = 0.f;
+				return 0.f;
+			}
+
+			return 0.f;
+		}
+
+	}
+
+	if (!(DamageCauser->IsA(APowerUpActor::StaticClass())))
+	{
+		return IncomingDamage;
+	}
+
+	return 0.f;
+	
 }
 
 void APlayerBase::OnHookHit(UPrimitiveComponent* HitComponent, AActor* OtherActor, UPrimitiveComponent* OtherComp,
 	FVector NormalImpulse, const FHitResult& Hit)
 {
+	Hook->GetCollisionComponent()->SetCollisionEnabled(ECollisionEnabled::NoCollision);
 	if (HookCurrentState::GrappleReturn == _HookCurrentState)
 		return;
 
-	if (HookCurrentState::GrappleFiredWithObject == _HookCurrentState)
+#ifdef _DEBUG_GRAPPLE
+		UE_LOG(LogTemp, Warning, TEXT("collision type: %i"), AttachedComponentType);
+#endif
+	AttachedComponentType = OtherComp->GetCollisionObjectType();
+	switch (AttachedComponentType)
 	{
-		_HookCurrentState = HookCurrentState::GrappleReturn;
-		return;
-	}
-	
-	if (HitComponent)
-	{	
-		AttachedComponentType = OtherComp->GetCollisionObjectType();
-		if (Hook)
+	case ECollisionChannel::ECC_GameTraceChannel2:
 		{
-			switch (AttachedComponentType)
-			{
-				case ECollisionChannel::ECC_WorldStatic:
-				{
-					Hook->GetProjectileMovementComponent()->StopSimulating(Hit);
-					GetCharacterMovement()->AirControl = 0.0f;
-					InitialDistanceToHook = GetDistanceToHook();
-					LaunchCharacter(GetActorUpVector() * HookOnAttachedLaunchForce, false, false);
-					_HookCurrentState = HookCurrentState::GrappleTo;
-					
-				}
-				break;
-				case ECollisionChannel::ECC_PhysicsBody:
-				{
-					AttachedComponent = OtherComp;
-					//Hook->GetProjectileMovementComponent()->StopSimulating(Hit);
-					//Hook->GetCollisionComponent()->AttachToComponent(OtherComp, FAttachmentTransformRules::KeepWorldTransform);
-					AttachedComponent->SetSimulatePhysics(false);
-					AttachedComponent->SetCollisionEnabled(ECollisionEnabled::QueryAndPhysics);
-					AttachedComponent->DetachFromComponent(FDetachmentTransformRules::KeepWorldTransform);
-					AttachedComponent->AttachToComponent(Hook->GetCollisionComponent(), FAttachmentTransformRules::KeepWorldTransform);				
-					_HookCurrentState = HookCurrentState::GrappleReturn;
-					if (AttachedComponent->GetOwner()->IsA(AAIBehaviorBase::StaticClass()))
-					{
-						const auto AIBB = Cast<AAIBehaviorBase>(AttachedComponent->GetOwner());
-						if (AIBB)
-						{
-							AIBB->OnAttach();
-						}
-					}
-				}
-				break;
-				default:
-				{
-					_HookCurrentState = HookCurrentState::GrappleReturn;				
-				}
-				break;
-			}
-		
+			OnHookHitGrappleTo();
 		}
+		break;
+		case ECollisionChannel::ECC_PhysicsBody:
+		{
+			OnHookHitGrappleInAttachedComponent(OtherComp);
+		}
+		break;
+		default:
+		{
+			_HookCurrentState = HookCurrentState::GrappleReturn;				
+		}
+		break;
+	}
+		
 #ifdef _DEBUG_GRAPPLE
 		UE_LOG(LogTemp, Warning, TEXT("Collision type %i"), AttachedComponentType);
 #endif
+}
+void APlayerBase::OnHookHitGrappleTo()
+{
+	FHitResult Hit;
+	Hook->GetProjectileMovementComponent()->StopSimulating(Hit);
+	GetCharacterMovement()->AirControl = 0.0f;
+	InitialDistanceToHook = GetDistanceToHook();
+	LaunchCharacter(GetActorUpVector() * HookOnAttachedLaunchForce, false, false);
+	_HookCurrentState = HookCurrentState::GrappleTo;
+}
+
+void APlayerBase::OnHookHitGrappleInAttachedComponent(UPrimitiveComponent* OtherComp)
+{
+	UE_LOG(LogTemp, Error, TEXT("OnHookHitGrappleInAttachedComponent"));
+	AttachedComponent = OtherComp;
+	AttachedComponent->AttachToComponent(Hook->GetCollisionComponent(), FAttachmentTransformRules::KeepWorldTransform);
+	
+	if (AttachedComponent->GetOwner()->IsA(AAIBehaviorBase::StaticClass()))
+	{
+		const auto AIBB = Cast<AAIBehaviorBase>(AttachedComponent->GetOwner());
+		if (AIBB)
+		{
+			AIBB->OnAttach();
+		}
 	}
+
+	_HookCurrentState = HookCurrentState::GrappleReturn;
+}
+
+
+void APlayerBase::OnUpdatePlayerCustomTexture2DUniform(FViewUniformShaderParameters& ViewUniformShaderParameters)
+{
+	if (ShadowProjectionTexture->TextureReference.TextureReferenceRHI.IsValid())
+	{
+		ViewUniformShaderParameters.PawnCustomTexture = ShadowProjectionTexture->TextureReference.TextureReferenceRHI;
+	}
+	if (DepthProjectionTexture->TextureReference.TextureReferenceRHI.IsValid())
+	{
+		ViewUniformShaderParameters.PawnCustomTexture1 = DepthProjectionTexture->TextureReference.TextureReferenceRHI;
+	}	
+}
+
+void APlayerBase::OnUpdatePlayerCustomCbUniform(TStaticArray<FVector4, 8>& DataPins)
+{
+	FMinimalViewInfo MinimalViewInfo;
+	FMatrix View, Project, ViewProject;
+	ShadowProjectionCamera->GetCameraView(UGameplayStatics::GetWorldDeltaSeconds(GetWorld()), MinimalViewInfo);
+	UGameplayStatics::GetViewProjectionMatrix(MinimalViewInfo, View, Project, ViewProject);
+	const auto MVP = (View* Project).GetTransposed();
+	const auto ViewMatrix = View.GetTransposed();
+	DataPins[0] = FVector4(MVP.M[0][0], MVP.M[0][1], MVP.M[0][2], MVP.M[0][3]);
+	DataPins[1] = FVector4(MVP.M[1][0], MVP.M[1][1], MVP.M[1][2], MVP.M[1][3]);
+	DataPins[2] = FVector4(MVP.M[2][0], MVP.M[2][1], MVP.M[2][2], MVP.M[2][3]);
+	DataPins[3] = FVector4(MVP.M[3][0], MVP.M[3][1], MVP.M[3][2], MVP.M[3][3]);
+
+	DataPins[4] = GetActorLocation();//FVector4(ViewMatrix.M[0][0], ViewMatrix.M[0][1], ViewMatrix.M[0][2], ViewMatrix.M[0][3]);
+	DataPins[5] = FVector4(ViewMatrix.M[1][0], ViewMatrix.M[1][1], ViewMatrix.M[1][2], ViewMatrix.M[1][3]);
+	DataPins[6] = FVector4(ViewMatrix.M[2][0], ViewMatrix.M[2][1], ViewMatrix.M[2][2], ViewMatrix.M[2][3]);
+	DataPins[7] = FVector4(ViewMatrix.M[3][0], ViewMatrix.M[3][1], ViewMatrix.M[3][2], ViewMatrix.M[3][3]);
+}
+
+void APlayerBase::LoadPlayerData()
+{
+	
+	const auto GameInstance = Cast<UHookGameInstance>(GetGameInstance());
+
+	if(GameInstance)
+	{
+		if(GameInstance->bLevelIsLoaded)
+		{
+			GameInstance->bLevelIsLoaded = false;
+			GameInstance->LoadPlayerData(this);
+		}
+
+		if(GameInstance->bCheckpointIsLoaded)
+		{
+			GameInstance->bCheckpointIsLoaded = false;
+			GameInstance->LoadPlayerCheckpointData(this);
+		}
+	}
+
 }
 
 void APlayerBase::OnFireReleased()
@@ -974,8 +1341,12 @@ void APlayerBase::OnFireReleased()
 
 void APlayerBase::OnUsePressed()
 {
+#ifdef _DEBUG_INPUT	
 	UE_LOG(LogTemp, Warning, TEXT("On use pressed"));
-	CurrentHealth -= 10.f;
+#endif
+	UE_LOG(LogTemp, Warning, TEXT("On use pressed"));
+	if (SkillTreeFCRI)
+		SkillTreeFCRI->AddExperience(500);
 	SetActorLocation(GetActorLocation() - FVector(0.f, 0.f, 10.f));
 }
 
@@ -983,8 +1354,17 @@ void APlayerBase::OnUseReleased()
 {
 }
 
+void APlayerBase::OnSkillTreePressed()
+{
+	if (SkillTreeFCRI)
+		SkillTreeFCRI->OnSkillTreePressed();
+}
+
 void APlayerBase::OnJumpPressed()
 {
+	if (!CompareAttackState(AttackState::Default))
+		return;
+	
 	Jump();
 }
 
@@ -995,7 +1375,7 @@ void APlayerBase::OnJumpReleased()
 
 void APlayerBase::OnRightClickPressed()
 {
-	HookFire();
+	TryEnterHookFireTransition();
 }
 
 void APlayerBase::OnRightClickReleased()
@@ -1003,9 +1383,43 @@ void APlayerBase::OnRightClickReleased()
 	HookDetach();
 }
 
+void APlayerBase::CursorUpdate(const float DeltaTime)
+{
+	const auto PlayerController = Cast<APlayerController>(GetController());
+	ReturnIfNull(PlayerController);
+
+	if (bInMenu)
+	{
+		SetMouseCursor(PlayerController, EMouseCursor::Default);
+		return;
+	}
+
+	FHitResult Hit;	TArray<TEnumAsByte<EObjectTypeQuery>> ObjectQuery;
+	ObjectQuery.Push(EObjectTypeQuery::ObjectTypeQuery8);
+	const bool bHit = PlayerController->GetHitResultUnderCursorForObjects(ObjectQuery, false, Hit);
+
+	const auto ImpactPoint = Hit.ImpactPoint;
+	const auto PlayerLocation = GetActorLocation();
+	const auto PlayerToImpact = ImpactPoint - PlayerLocation;
+
+	if (bHit && PlayerToImpact.Size() < HookMaxRange)
+		SetMouseCursor(PlayerController, EMouseCursor::Crosshairs);
+	else
+		SetMouseCursor(PlayerController, EMouseCursor::Hand);
+	
+}
+
 bool APlayerBase::CanTransitionToAttack2() const
 {
-	return bCanTransitionToAttack2;
+	return CompareAttackStateTransition(AttackStateTransition::Attack2);
+}
+
+void APlayerBase::OnHookFire()
+{
+#ifdef _DEBUG_GRAPPLE	
+	UE_LOG(LogTemp, Warning, TEXT("OnHookFireCalled"));
+#endif
+	HookFire();
 }
 
 bool APlayerBase::IsSliding() const
@@ -1018,24 +1432,55 @@ bool APlayerBase::IsAttacking() const
 	return _CustomMovementMode == CustomMovementModes::Attacking;
 }
 
+bool APlayerBase::IsGrappleFired() const
+{
+	return _HookCurrentState == HookCurrentState::GrappleFired;
+}
+
+bool APlayerBase::IsGrappleReturning() const
+{
+	return _HookCurrentState == HookCurrentState::GrappleReturn;
+}
+
+bool APlayerBase::IsGrapplingTo() const
+{
+	return _HookCurrentState == HookCurrentState::GrappleTo;
+}
+
+bool APlayerBase::IsGrappling() const
+{
+	return _CustomMovementMode == CustomMovementModes::Grappling;
+}
+
+bool APlayerBase::IsHookInAir()
+{
+	return _HookCurrentState == HookCurrentState::GrappleInAir;
+}
+
 void APlayerBase::SetupPlayerInputComponent(UInputComponent* PlayerInputComponent)
 {
 	Super::SetupPlayerInputComponent(PlayerInputComponent);
-
+	
 	PlayerInputComponent->BindAxis(TEXT("MoveForward"), this, &THIS::OnMoveForward);
 	PlayerInputComponent->BindAxis(TEXT("MoveRight"), this, &THIS::OnMoveRight);
-
-	PlayerInputComponent->BindAction(TEXT("Use"), IE_Pressed, this, &THIS::OnUsePressed);
-	PlayerInputComponent->BindAction(TEXT("Use"), IE_Released, this, &THIS::OnUseReleased);
-
 	PlayerInputComponent->BindAction(TEXT("Fire"), IE_Pressed, this, &THIS::OnFirePressed);
 	PlayerInputComponent->BindAction(TEXT("Fire"), IE_Released, this, &THIS::OnFireReleased);
-
 	PlayerInputComponent->BindAction(TEXT("RightClick"), IE_Pressed, this, &THIS::OnRightClickPressed);
 	PlayerInputComponent->BindAction(TEXT("RightClick"), IE_Released, this, &THIS::OnRightClickReleased);
-
 	PlayerInputComponent->BindAction(TEXT("Jump"), IE_Pressed, this, &THIS::OnJumpPressed);
 	PlayerInputComponent->BindAction(TEXT("Jump"), IE_Released, this, &THIS::OnJumpReleased);
+
+	PlayerInputComponent->BindAction(TEXT("HealthDebug"), IE_Pressed, this, &THIS::OnUsePressed);
+	PlayerInputComponent->BindAction(TEXT("HealthDebug"), IE_Released, this, &THIS::OnUseReleased);
+	PlayerInputComponent->BindAction(TEXT("SkillTree"), IE_Pressed, this, &THIS::OnSkillTreePressed);
+	
+	//Interact
+	PlayerInputComponent->BindAction("Use", IE_Pressed, this, &THIS::InteractWithNPC);
+
+	//Save and load DEBUG
+	PlayerInputComponent->BindAction(TEXT("DebugSave"), IE_Pressed, this, &THIS::SaveGame);
+
+	PlayerInputComponent->BindAction(TEXT("DebugLoad"), IE_Pressed, this, &THIS::LoadGame);
 }
 
 bool APlayerBase::CanVault() const
@@ -1060,16 +1505,28 @@ float APlayerBase::GetHookDelayPercent() const
 
 void APlayerBase::OnMoveForward(const float Value)
 {
-	const FRotator YawRotation(0, SpringArm->GetRelativeRotation().Yaw, 0);
-	const FVector Direction = FRotationMatrix(YawRotation).GetUnitAxis(EAxis::X);
-	AddMovementInput(Direction, Value);
+
+	if ((Controller != nullptr) && (Value != 0.0f) && !bPlayerIsTalking)
+	{		
+		const FRotator YawRotation(0, SpringArm->GetRelativeRotation().Yaw, 0);
+		const FVector Direction = FRotationMatrix(YawRotation).GetUnitAxis(EAxis::X);
+		AddMovementInput(Direction, Value);
+	}
 }
 
 void APlayerBase::OnMoveRight(const float Value)
 {
-	const FRotator YawRotation(0, SpringArm->GetRelativeRotation().Yaw, 0);
-	const FVector Direction = FRotationMatrix(YawRotation).GetUnitAxis(EAxis::Y);
-	AddMovementInput(Direction, Value);
+	if ((Controller != nullptr) && (Value != 0.0f) && !bPlayerIsTalking)
+	{
+		const FRotator YawRotation(0, SpringArm->GetRelativeRotation().Yaw, 0);
+		const FVector Direction = FRotationMatrix(YawRotation).GetUnitAxis(EAxis::Y);
+		AddMovementInput(Direction, Value);
+	}
+}
+
+USkillTree* APlayerBase::GetSkillTree() const
+{
+	return SkillTreeFCRI;
 }
 
 void APlayerBase::DebugUpdate(const float DeltaTime) const
@@ -1097,6 +1554,10 @@ void APlayerBase::CreateComponents()
 
 	GrappleCable = CreateDefaultSubobject<UCableComponent>(TEXT("Grapple Cable"));
 
+	//PlayerShadow = CreateDefaultSubobject<UDecalComponent>(TEXT("Player Shadow"));
+	//PlayerShadow->SetupAttachment(RootComponent);
+
+	/*
 	ConstructorHelpers::FClassFinder<AActor> OBJ(TEXT("/Game/Blueprints/FastTest"));
 	if (OBJ.Succeeded())
 	{
@@ -1107,4 +1568,410 @@ void APlayerBase::CreateComponents()
 	{
 		UE_LOG(LogTemp, Error, TEXT("Obj not found"));
 	}
+	*/
+	
+	ShadowProjectionCamera = CreateDefaultSubobject<USceneCaptureComponent2D>(TEXT("Shadow Projection Camera"));
+	DepthProjectionCamera = CreateDefaultSubobject<USceneCaptureComponent2D>(TEXT("Depth Projection Camera"));
+	ShadowProjectionCameraArm = CreateDefaultSubobject<USpringArmComponent>(TEXT("Shadow Projection Arm"));
+	HookSpawnPoint = CreateDefaultSubobject<USceneComponent>(TEXT("Hook Spawn Point"));
+	
+	ShadowProjectionCameraArm->SetupAttachment(RootComponent);
+	ShadowProjectionCamera->SetupAttachment(ShadowProjectionCameraArm);
+	DepthProjectionCamera->SetupAttachment(ShadowProjectionCameraArm);
+
+	VaultCapsule = CreateDefaultSubobject<UCapsuleComponent>(TEXT("Vault Capsule"));
+	VaultBoxExtent = CreateDefaultSubobject<UBoxComponent>(TEXT("Vault BoxExtent"));
+
+	VaultCapsule->SetCapsuleHalfHeight(CapsuleDefaultStandingHeight);
+	VaultCapsule->SetCapsuleRadius(CapsuleDefaultRadius);
+	VaultBoxExtent->SetupAttachment(RootComponent);
+	VaultCapsule->SetupAttachment(VaultBoxExtent);
+	VaultBoxExtent->bHiddenInGame = false;
+
+
+	
+	
+	SkillTreeFCRI = CreateDefaultSubobject<USkillTree>(TEXT("Skill tree"));
+	if(!SkillTreeFCRI)
+	{
+		UE_LOG(LogTemp, Error, TEXT("Failed to create skilltree"));
+	}
+	else
+	{
+		UE_LOG(LogTemp, Error, TEXT("created skilltree"));
+	}
+	
+	//CreateObjectAndLog(SkillTreeFuckUnreal, USkillTree);
+}
+
+
+void APlayerBase::SaveGame()
+{
+	UHookGameInstance* GameInstanceRef = Cast<UHookGameInstance>(UGameplayStatics::GetGameInstance(GetWorld()));
+
+	if (GameInstanceRef)
+	{
+		UE_LOG(LogTemp, Warning, TEXT("Game instance found on save"))
+		GameInstanceRef->SaveGameData(this);
+	}
+
+	else
+	{
+		UE_LOG(LogTemp, Warning, TEXT("Save game failed"))
+	}
+
+}
+
+void APlayerBase::SaveLatestCheckpoint()
+{
+	UHookGameInstance* GameInstanceRef = Cast<UHookGameInstance>(UGameplayStatics::GetGameInstance(GetWorld()));
+
+	if (GameInstanceRef)
+	{
+		UE_LOG(LogTemp, Warning, TEXT("Game instance found on save"))
+		GameInstanceRef->SaveLatestCheckpoint(this);
+	}
+
+	else
+	{
+		UE_LOG(LogTemp, Warning, TEXT("Save checkpoint failed"))
+	}
+
+}
+
+void APlayerBase::LoadCheckpoint()
+{
+
+	UHookGameInstance* GameInstanceRef = Cast<UHookGameInstance>(UGameplayStatics::GetGameInstance(GetWorld()));
+
+	if (GameInstanceRef)
+	{
+		GameInstanceRef->LoadLatestCheckpoint(this);
+
+		UE_LOG(LogTemp, Warning, TEXT("Game instance found on load Checkpoint"))
+	}
+
+	else
+	{
+		UE_LOG(LogTemp, Warning, TEXT("Load checkpoint failed"))
+	}
+	
+}
+
+
+void APlayerBase::LoadGame()
+{
+
+	UHookGameInstance* GameInstanceRef = Cast<UHookGameInstance>(UGameplayStatics::GetGameInstance(GetWorld()));
+
+	if(GameInstanceRef)
+	{
+		GameInstanceRef->LoadGameData(this);
+
+		UE_LOG(LogTemp, Warning, TEXT("Game instance found on load"))
+	}
+
+	else
+	{
+		UE_LOG(LogTemp, Warning, TEXT("Load game failed"))
+	}
+	
+}
+
+float APlayerBase::GetPlayerToHookRotation()
+{
+	const FRotator A = (GetDirectionToHook() / GetDistanceToHook()).Rotation();
+	const FRotator B = GetActorRotation();
+	FRotator Delta = A - B;
+	Delta.Normalize();
+	return FMath::ClampAngle(Delta.Yaw, -179.f, 179.f);
+}
+
+float APlayerBase::GetCurrentHealth()
+{
+	return CurrentHealth;
+}
+
+float APlayerBase::GetMaxHealth()
+{
+	return MaxHealth;
+}
+
+void APlayerBase::InteractionActive(UPrimitiveComponent* HitComp, AActor* OtherActor, UPrimitiveComponent* OtherComp, int32 OtherIndex, bool bFromSweep, const FHitResult& SweepResult)
+{
+
+	if (OtherActor && (OtherActor != this) && OtherComp && (OtherActor->IsA(AAIRobotSidekick::StaticClass())))
+	{
+#ifdef _DEBUG_INTERACTION
+		UE_LOG(LogTemp, Warning, TEXT("Player is now in the interaction area and can interact"));
+#endif
+		PlayerCanInteract = true;
+	}
+
+}
+
+void APlayerBase::InteractionNotActive(UPrimitiveComponent* HitComp, AActor* OtherActor, UPrimitiveComponent* OtherComp, int32 OtherIndex)
+{
+
+	if (PlayerCanInteract)
+	{
+		PlayerCanInteract = false;
+#ifdef _DEBUG_INTERACTION
+		UE_LOG(LogTemp, Warning, TEXT("Player is not in the interaction area anymore"));
+#endif
+	}
+
+}
+
+void APlayerBase::OnIncomingXP(int32 Amount)
+{
+	SkillTreeFCRI->AddExperience(Amount); 
+}
+
+void APlayerBase::GeneratePlayerLines(UDataTable* PlayerLines)
+{
+	TArray<FName> PlayerOptions = PlayerLines->GetRowNames();
+
+	for (auto It : PlayerOptions)
+	{
+		FDialogue* Dialog = RetrieveDialogue(PlayerLines, It);
+
+		if (Dialog)
+		{
+			Questions.Add(Dialog->QuestionText);
+		}
+	}
+	DialogueUIPtr->QuestionsForHUD = Questions;
+	AvailableLines = PlayerLines;	
+}
+
+void APlayerBase::OnPlayerKnockBack(const FVector& KnockBackFrom, float KnockBackValue)
+{
+	const auto PlayerLocation = GetActorLocation();
+	const auto TargetToPlayer = PlayerLocation - KnockBackFrom;
+	const auto Direction = TargetToPlayer / TargetToPlayer.Size();
+	GetCharacterMovement()->Velocity += Direction * KnockBackValue;
+}
+
+void APlayerBase::Talk(FString Excerpt, TArray<FSubtitle>& Subtitles)
+{
+	TArray<FName> PlayerOptions = AvailableLines->GetRowNames();
+
+	for (auto It : PlayerOptions)
+	{
+		FDialogue* Dialogue = RetrieveDialogue(AvailableLines, It);
+
+		if (Dialogue && Dialogue->QuestionText == Excerpt)
+		{
+#ifdef _DEBUG_INTERACTION
+			UE_LOG(LogTemp, Error, TEXT("Dialogue found and excerpt"));
+#endif
+			AudioComp->SetSound(Dialogue->DialogueSoundEffect);
+			AudioComp->Play();
+
+			Subtitles = Dialogue->Subtitles;
+			
+			if (DialogueUIPtr && AssociatedNPC && Dialogue->bShouldAIRespond)
+			{				
+				TArray<FSubtitle> SubtitlesToDisplay;
+
+				float TotalSubsTime = 0.f;
+
+				for (int32 i = 0; i < Subtitles.Num(); i++)
+				{
+					TotalSubsTime += Subtitles[i].SubtitleDisplayTime;
+				}
+
+				TotalSubsTime += SpeakerNPCDelay;
+
+				AssociatedNPC->AnswerPlayerCharacter(It, SubtitlesToDisplay, TotalSubsTime);
+
+			}
+			else if (!Dialogue->bShouldAIRespond) InteractWithNPC();
+			break;
+		}
+
+
+
+	}
+
+}
+
+void APlayerBase::SetInteractableNPC(AAIRobotSidekick* NPC)
+{
+	
+	InteractableNPC = NPC;
+	
+	if(InteractableNPC)
+	{
+		InteractionWidget->SetVisibility(ESlateVisibility::Visible);
+	}
+	else
+	{
+		InteractionWidget->SetVisibility(ESlateVisibility::Hidden);
+	}
+	
+}
+
+void APlayerBase::DisplayInteractMessage()
+{
+#ifdef _DEBUG_INTERACTION
+	UE_LOG(LogTemp, Warning, TEXT("DisplayInteractMessage"));
+#endif
+	const auto PlayerControllerReference = Cast<APlayerControllerBase>(Controller);
+	if (PlayerControllerReference)
+	{
+		const auto PlayerHUDRef = PlayerControllerReference->HUD;
+		if (PlayerHUDRef)
+		{
+			if(InteractionWidget)
+			{
+				if(PlayerCanInteract)
+				{
+					if(InteractableNPC && !bNPCFollowPlayer)
+					{
+						NPCPosition = InteractableNPC->GetActorLocation();
+#ifdef _DEBUG_INTERACTION
+						UE_LOG(LogTemp, Warning, TEXT("InteractableNPC"));
+#endif
+					}
+				}
+#ifdef _DEBUG_INTERACTION
+				UE_LOG(LogTemp, Warning, TEXT("PlayerHUDRef"));
+#endif
+				FVector2D PositionInViewport;
+				PlayerControllerReference->ProjectWorldLocationToScreen(NPCPosition, PositionInViewport);
+
+				FVector2D SizeOfInteractHUD{ InteractSizeX,InteractSizeY };
+				InteractionWidget->SetDesiredSizeInViewport(SizeOfInteractHUD);
+
+				PositionInViewport.X -= 50;
+				PositionInViewport.Y -= 90;
+
+				InteractionWidget->SetPositionInViewport(PositionInViewport);
+							
+			}
+			
+		}
+	}
+
+}
+
+void APlayerBase::OnVaultBoxBeginOverlap(UPrimitiveComponent* HitComp, AActor* OtherActor,
+	UPrimitiveComponent* OtherComp, int32 OtherIndex, bool bFromSweep, const FHitResult& SweepResult)
+{
+#ifdef _DEBUG_VAULTING
+	UE_LOG(LogTemp, Warning, TEXT("Overlap"));
+#endif
+	TArray<AActor*> HitActor;
+	VaultCapsule->GetOverlappingActors(HitActor);
+	if (HitActor.Num())
+		return;
+
+	if (OtherComp->GetCollisionProfileName().ToString() == "WaterBodyCollision")
+		return;
+#ifdef _DEBUG_VAULTING
+	UE_LOG(LogTemp, Warning, TEXT("OnVaultBoxBeginOverlap can vault"));
+#endif _DEBUG_VAULTING
+
+	const auto VaultCapsuleLocation = VaultCapsule->GetComponentLocation();
+	const auto VaultCapsHalfHeight = VaultCapsule->GetScaledCapsuleHalfHeight()*2.f;
+	const auto VaultCapsRadius = VaultCapsule->GetScaledCapsuleRadius();
+	const auto TraceEnd = VaultCapsule->GetComponentLocation() + (FVector::DownVector * VaultCapsHalfHeight);
+	FHitResult SphereHitResult;
+	TArray<AActor*> IgnoreActors;
+	auto bHit = UKismetSystemLibrary::SphereTraceSingle(GetWorld(), VaultCapsuleLocation, TraceEnd, VaultCapsRadius, ETraceTypeQuery::TraceTypeQuery1, true, IgnoreActors, EDrawDebugTrace::ForDuration, SphereHitResult, true, FLinearColor::Red);
+
+	if (!bHit)
+		return;
+
+	if (Dot3(SphereHitResult.ImpactNormal, FVector::UpVector) < 0.5f)
+		return;
+	
+	if (GetCharacterMovement()->IsFalling())
+		TryEnterVaultingTransition(VaultCapsule->GetComponentLocation());
+	
+}
+
+void APlayerBase::InteractWithNPC()
+{
+	if (PlayerCanInteract)
+	{
+#ifdef _DEBUG_INTERACTION
+		UE_LOG(LogTemp, Warning, TEXT("You pressed E to interact with the NPC"));
+#endif
+		bPlayerIsTalking = !bPlayerIsTalking;
+		ToggleUI();
+		if (bPlayerIsTalking && AssociatedNPC)
+		{
+			const FVector Location = AssociatedNPC->GetActorLocation();
+			const FVector TargetLocation = GetActorLocation();
+
+			AssociatedNPC->SetActorRotation((TargetLocation - Location).Rotation());
+		}
+	}
+}
+
+void APlayerBase::ToggleUI()
+{
+	const auto PlayerControllerRef = Cast<APlayerControllerBase>(Controller);
+
+	if(PlayerControllerRef)
+	{		
+		if(bPlayerIsTalking)
+		{
+#ifdef _DEBUG_INTERACTION
+			UE_LOG(LogTemp, Warning, TEXT("PlayerisNowTalking"));
+#endif
+			const auto PlayerControllerHUDRef = PlayerControllerRef->HUD;
+			if (PlayerControllerHUDRef->IsInViewport())
+			{
+				if(DialogueUIPtr->IsInViewport()&&!bPlayerIsTalking)
+				{				
+					UWidgetBlueprintLibrary::SetInputMode_GameOnly(PlayerControllerRef);
+					PlayerControllerRef->bShowMouseCursor = true;
+					PlayerControllerRef->bEnableClickEvents = true;
+					PlayerControllerRef->bEnableClickEvents = true;
+					PlayerControllerRef->bEnableMouseOverEvents = true;
+					PlayerControllerRef->SetMouseCursorWidget(EMouseCursor::Crosshairs, WidgetCursorNotLocked);
+					DialogueUIPtr->RemoveFromViewport();
+#ifdef _DEBUG_INTERACTION
+					UE_LOG(LogTemp, Warning, TEXT("DialogueUIHUDRemoved"));
+#endif
+				}	
+				else
+				{		
+					const auto PlayerLines = AssociatedNPC->GetPlayerLines();
+					//GeneratePlayerLines(PlayerLines);
+					
+					DialogueUIPtr->Show();
+					UWidgetBlueprintLibrary::SetInputMode_GameAndUI(PlayerControllerRef);
+					PlayerControllerRef->bShowMouseCursor = true;
+					PlayerControllerRef->bEnableClickEvents = true;
+					PlayerControllerRef->bEnableMouseOverEvents = true;	
+				}
+			}
+		}else
+		{
+			if (DialogueUIPtr->IsInViewport())
+			{
+				DialogueUIPtr->RemoveFromViewport();
+			}
+		}
+	}	
+}
+
+FDialogue* APlayerBase::RetrieveDialogue(UDataTable* TableToSearch, FName RowName)
+{
+	if (!TableToSearch)
+	{
+		return nullptr;
+
+	}
+
+
+	FString ContextString;
+	return TableToSearch->FindRow<FDialogue>(RowName, ContextString);
+
+
 }

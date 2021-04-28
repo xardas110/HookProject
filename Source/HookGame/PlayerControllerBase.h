@@ -15,12 +15,13 @@ class HOOKGAME_API APlayerControllerBase : public APlayerController
 {
 	GENERATED_BODY()
 	
-	UPROPERTY()
-		UUserWidget* HUD;
 	UPROPERTY(EditAnywhere, Category = "HUD")
 		TSubclassOf<UUserWidget> HUDClass;
 protected:
 	virtual void BeginPlay() override;
+
 public:
+	UPROPERTY()
+		UUserWidget* HUD;
 	
 };

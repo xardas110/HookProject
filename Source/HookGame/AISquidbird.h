@@ -43,6 +43,11 @@ public:
 	UPROPERTY(EditAnywhere, Category = "Squidbird Params");
 	class USphereComponent* AttackHitbox{ nullptr };
 
+	UPROPERTY(EditAnywhere, Category = "Squidbird Params");
+	bool bHasRabies = false;
+
+	UPROPERTY(EditAnywhere, Category = "Squidbird Params");
+	float AttackDamage = 10.f;
 
 protected:
 	UFUNCTION()

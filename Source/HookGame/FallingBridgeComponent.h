@@ -37,12 +37,29 @@ private:
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Setup", meta = (AllowPrivateAccess = "true"))
 	float TargetRoll = 0.0f;
 
+
+	//Fall modes
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Fall mode - ONLY ONE ACTIVE AT A TIME", meta = (AllowPrivateAccess = "true"))
+	bool LinearInterpolation = false;
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Fall mode - ONLY ONE ACTIVE AT A TIME", meta = (AllowPrivateAccess = "true"))
+	bool InterpolateConstantTo = false;
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Fall mode - ONLY ONE ACTIVE AT A TIME", meta = (AllowPrivateAccess = "true"))
+	bool ExponentialInterpolationIn = false;
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Fall mode - ONLY ONE ACTIVE AT A TIME", meta = (AllowPrivateAccess = "true"))
+	bool ExponentialInterpolationOut = false;
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Fall mode - ONLY ONE ACTIVE AT A TIME", meta = (AllowPrivateAccess = "true"))
+	bool ExponentialInterpolationInOut = false;
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Fall mode - ONLY ONE ACTIVE AT A TIME", meta = (AllowPrivateAccess = "true"))
+	bool ConstantStepInterpolation = false;
+
 	bool HitByPlayer = false;
 
 	//Functions
 	UFUNCTION()
 	void CheckIfHit(AActor* SelfActor, AActor* OtherActor, FVector NormalImpulse, const FHitResult& Hit);
 	void FallToTargetLocation(float DeltaTime);
+
+	int BoolToInt(bool FallMode);
 
 	class UStaticMeshComponent;
 

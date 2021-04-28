@@ -8,13 +8,15 @@ public class HookGame : ModuleRules
 	{
 		PCHUsage = PCHUsageMode.UseExplicitOrSharedPCHs;
 	
-		PublicDependencyModuleNames.AddRange(new string[] { "Core", "CoreUObject", "Engine", "InputCore", "CableComponent", "AIModule", "GameplayTasks", "UMG" });
+		PublicDependencyModuleNames.AddRange(new string[] { "Core", "CoreUObject", "Engine", "InputCore", "CableComponent", "AIModule", "GameplayTasks", "UMG", "landscape" });
 
 		PrivateDependencyModuleNames.AddRange(new string[] {  });
 
-		// Uncomment if you are using Slate UI
-		// PrivateDependencyModuleNames.AddRange(new string[] { "Slate", "SlateCore" });
-		
+        PublicDependencyModuleNames.AddRange(new string[] { "Core", "CoreUObject", "Engine", "InputCore", "UMG", "Slate", "SlateCore", "NavigationSystem" });
+
+		 //Uncomment if you are using Slate UI
+		 PrivateDependencyModuleNames.AddRange(new string[] { "Slate", "SlateCore" });
+
 		// Uncomment if you are using online features
 		// PrivateDependencyModuleNames.Add("OnlineSubsystem");
 

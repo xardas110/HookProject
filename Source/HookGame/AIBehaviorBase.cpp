@@ -7,9 +7,12 @@
 #include "Components/CapsuleComponent.h"
 #include "Kismet/GameplayStatics.h"
 #include "PlayerBase.h"
+#include "PlayerSword.h"
+#include "GameFramework/CharacterMovementComponent.h"
+#include "AIRobotSidekick.h"
 
+#define _DEBUG_AIBEHAVIOR
 
-// Sets default values
 AAIBehaviorBase::AAIBehaviorBase()
 {
  	// Set this character to call Tick() every frame.  You can turn this off to improve performance if you don't need it.
@@ -17,59 +20,93 @@ AAIBehaviorBase::AAIBehaviorBase()
 
 }
 
-
-void AAIBehaviorBase::OnAttach()
+void AAIBehaviorBase::UpdateStunDuration(const float DeltaTime)
 {
-	UE_LOG(LogTemp, Warning, TEXT("enemy has been grappled!"));
-	if (Controller)
-
-	bIsGrabbed = true;
+	if (bCanAttack)
+		return;
+	
+	CurrentStunDuration += DeltaTime;
+	if (CurrentStunDuration >= StunDurationAfterGrabbed)
+		bCanAttack = true;
+	
 }
 
-void AAIBehaviorBase::OnDetach()
-{
-	UE_LOG(LogTemp, Warning, TEXT("enemy has been released!"));
-	bIsGrabbed = false;
-	GetCapsuleComponent()->SetSimulatePhysics(false);
-	GetMesh()->SetSimulatePhysics(false);
-}
-
-void AAIBehaviorBase::OnBeginOverlapAttack()
-{
-	UE_LOG(LogTemp, Warning, TEXT("Default Attack Initiated"));
-}
-
-void AAIBehaviorBase::OnEndOverlapAttack()
-{
-	UE_LOG(LogTemp, Warning, TEXT("Default Attack Ended"));
-}
-
-void AAIBehaviorBase::Attack()
-{
-	UE_LOG(LogTemp, Warning, TEXT("Default Attack Initiated, Bool change"));
-}
-
-void AAIBehaviorBase::EndAttack()
-{
-	UE_LOG(LogTemp, Warning, TEXT("Default Attack Ended, bool change"));
-}
-
-void AAIBehaviorBase::HandleDeath()
-{
-	UE_LOG(LogTemp, Warning, TEXT("Default Death handle callded"));
-}
-
-// Called when the game starts or when spawned
 void AAIBehaviorBase::BeginPlay()
 {
 	Super::BeginPlay();
 	
+	StandingZValue = GetActorLocation().Z;
+}
+
+void AAIBehaviorBase::OnAttach()
+{
+#ifdef _DEBUG_AIBEHAVIOR
+	UE_LOG(LogTemp, Warning, TEXT("enemy has been grappled!"));
+#endif
+	bIsGrabbed = true;
+	bCanAttack = false;
+}
+
+void AAIBehaviorBase::OnDetach()
+{
+#ifdef _DEBUG_AIBEHAVIOR
+	UE_LOG(LogTemp, Warning, TEXT("enemy has been released!"));
+#endif
+	bIsGrabbed = false;
+	CurrentStunDuration = 0.f;
+	
+	SetActorRotation(FRotator::ZeroRotator);
+	AddActorWorldOffset({ 0.f, 0.f, GetCapsuleComponent()->GetScaledCapsuleHalfHeight()});
+}
+
+void AAIBehaviorBase::OnBeginOverlapAttack()
+{
+#ifdef _DEBUG_AIBEHAVIOR
+	UE_LOG(LogTemp, Warning, TEXT("Default Attack Initiated"));
+#endif
+}
+
+void AAIBehaviorBase::OnEndOverlapAttack()
+{
+#ifdef _DEBUG_AIBEHAVIOR
+	UE_LOG(LogTemp, Warning, TEXT("Default Attack Ended"));
+#endif
+}
+
+void AAIBehaviorBase::Attack()
+{
+#ifdef _DEBUG_AIBEHAVIOR
+	UE_LOG(LogTemp, Warning, TEXT("Default Attack Initiated, Bool change"));
+#endif
+}
+
+void AAIBehaviorBase::EndAttack()
+{
+#ifdef _DEBUG_AIBEHAVIOR
+	UE_LOG(LogTemp, Warning, TEXT("Default Attack Ended, bool change"));
+#endif
+}
+
+void AAIBehaviorBase::HandleDeath()
+{
+#ifdef _DEBUG_AIBEHAVIOR
+	UE_LOG(LogTemp, Warning, TEXT("Default Death handle called"));
+#endif
+}
+
+void AAIBehaviorBase::FollowPlayer()
+{
+#ifdef _DEBUG_AIBEHAVIOR
+	UE_LOG(LogTemp, Warning, TEXT("Default Follow Player called"));
+#endif
 }
 
 void AAIBehaviorBase::Dodge()
 {
+#ifdef _DEBUG_AIBEHAVIOR
 	UE_LOG(LogTemp, Warning, TEXT("Default Dodge called"));
-	//APawn* PlayerPawn = UGameplayStatics::GetPlayerPawn(GetWorld(), 0);
+#endif
+	APawn* PlayerPawn = UGameplayStatics::GetPlayerPawn(GetWorld(), 0);
 	
 	
 }
@@ -79,12 +116,19 @@ void AAIBehaviorBase::Tick(float DeltaTime)
 {
 	Super::Tick(DeltaTime);
 	TimeSinceAttack += DeltaTime;
+	UpdateStunDuration(DeltaTime);
+	
 	APawn* PlayerPawn=UGameplayStatics::GetPlayerPawn(GetWorld(), 0);
+	TimeSinceReleased += DeltaTime;
 	if(PlayerPawn)
 	{
 		APlayerBase* Player = Cast<APlayerBase>(PlayerPawn);
 		if(Player)
 		{
+			FVector PlayerPosition = Player->GetActorLocation();
+			FVector MyPosition = GetActorLocation();
+			float PlayerLastSeen = 0.f;
+			
 			if (TimeSinceAttack >= DodgeCooldown)
 			{
 				if (Player->_AttackState != AttackState::Default)
@@ -96,8 +140,21 @@ void AAIBehaviorBase::Tick(float DeltaTime)
 					}
 				}
 			}
+			if (FVector::Dist(MyPosition, PlayerPosition) < DetectionRange) {
+				bPlayerInRange = true;
+				bReturnToStart = false;
+				PlayerLastSeen = GetWorld()->GetTimeSeconds();
+			}
+			else {
+				bPlayerInRange = false;
+			}
+
+			if (GetWorld()->GetTimeSeconds() > PlayerLastSeen + ResetTimer) {
+				bReturnToStart = true;
+			}
 		}
 	}
+	
 	if(bIsDead)
 	{
 		TimeSinceDeath += DeltaTime;
@@ -105,6 +162,19 @@ void AAIBehaviorBase::Tick(float DeltaTime)
 		{
 			Destroy();
 		}
+	}
+	
+	/*if(TimeSinceReleased>RecoveryTime&&!bIsStanding)
+	{
+		GetMesh()->SetSimulatePhysics(false);
+		GetMesh()->SetCollisionEnabled(ECollisionEnabled::QueryAndPhysics);
+		GetCapsuleComponent()->SetSimulatePhysics(false);
+		GetCapsuleComponent()->SetCollisionEnabled(ECollisionEnabled::QueryAndPhysics);
+	}*/
+	
+	if(bKnockedBack&&TimeSinceReleased>RecoveryTime)
+	{
+		bKnockedBack = false;
 	}
 }
 
@@ -117,14 +187,60 @@ void AAIBehaviorBase::SetupPlayerInputComponent(UInputComponent* PlayerInputComp
 
 float AAIBehaviorBase::TakeDamage(float DamageAmount, FDamageEvent const& DamageEvent, AController* EventInstigator, AActor* DamageCauser)
 {
-	//Super::TakeDamage(DamageAmount, DamageEvent, EventInstigator, DamageCauser);
 	const auto IncomingDamage = Super::TakeDamage(DamageAmount, DamageEvent, EventInstigator, DamageCauser);
+	DamageKnockback(DamageCauser);
 	HealthTotal -= FMath::Min(HealthTotal, IncomingDamage);
+	
 	if (HealthTotal <= 0) {
+#ifdef _DEBUG_AIBEHAVIOR
 		UE_LOG(LogTemp, Warning, TEXT("No health remaining"));
+#endif
+		
 		HandleDeath();
 		bIsDead=true;
 	}
 	return IncomingDamage;
 }
+
+void AAIBehaviorBase::DamageKnockback(AActor* DamageCauser)
+{
+	UWorld* GameWorld = GetWorld();
+	if (GameWorld) {
+		if (DamageCauser->IsA(APlayerSword::StaticClass())) {
+			bIsAttacking = false;
+			float KnockbackValue = Cast<APlayerSword>(DamageCauser)->KnockBackValue;
+			const auto PlayerController = GameWorld->GetFirstPlayerController();
+			if (PlayerController)
+			{
+				bKnockedBack = true;
+				TimeSinceReleased = 0.f;
+				FVector KnockbackVector = PlayerController->GetPawn()->GetActorLocation();
+				FVector Direction = KnockbackVector - GetActorLocation();
+				Direction /= Direction.Size();
+				GetCharacterMovement()->SetMovementMode(EMovementMode::MOVE_Walking);
+				GetCharacterMovement()->Velocity -= Direction * (KnockbackValue*WeightModifier());
+#ifdef _DEBUG_AIBEHAVIOR
+				UE_LOG(LogTemp, Error, TEXT("KNOCKBACK!"));
+#endif
+			}
+		}
+	}
+}
+
+float AAIBehaviorBase::WeightModifier()
+{
+	static float MyWeight = GetCapsuleComponent()->UPrimitiveComponent::GetMass();
+	if (MyWeight > 100.f)
+		return 0.5f;
+	if (MyWeight < 100.f)
+		return 3.f;
+	if (MyWeight == 100.f)
+		return 1.f;
+	else
+	{
+		UE_LOG(LogTemp, Error, TEXT(" Could not get weight for knockback! "));
+		return 1.f;
+	}
+}
+
 

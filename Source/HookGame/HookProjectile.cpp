@@ -10,17 +10,19 @@ AHookProjectile::AHookProjectile()
 {
  	// Set this actor to call Tick() every frame.  You can turn this off to improve performance if you don't need it.
 	PrimaryActorTick.bCanEverTick = true;
-	
+
+	/*
 	if (!RootComponent)
 	{
 		RootComponent = CreateDefaultSubobject<USceneComponent>(TEXT("ProjectileSceneComponent"));
 	}
+	*/
 	
 	HookCollision = CreateDefaultSubobject<USphereComponent>(TEXT("SphereComponent"));
 	RootComponent = HookCollision;
 	HookCollision->OnComponentHit.AddDynamic(this, &AHookProjectile::OnHit);
 	
-	HookMesh = CreateDefaultSubobject<UStaticMeshComponent>(TEXT("Hook Mesh"));
+	HookMesh = CreateDefaultSubobject<USkeletalMeshComponent>(TEXT("Hook Mesh"));
 	HookMesh->SetupAttachment(HookCollision);
 
 	CableAttachmentPoint = CreateDefaultSubobject<USceneComponent>(TEXT("Cable Attachment Point"));
@@ -41,7 +43,6 @@ AHookProjectile::AHookProjectile()
 void AHookProjectile::BeginPlay()
 {
 	Super::BeginPlay();
-	
 }
 
 UProjectileMovementComponent* AHookProjectile::GetProjectileMovementComponent()
@@ -66,7 +67,6 @@ void AHookProjectile::OnHit(UPrimitiveComponent* HitComponent, AActor* OtherActo
 		APlayerBase* Player = Cast<APlayerBase>(ThisOwner);
 		if (ThisOwner)
 		{
-			HookCollision->SetCollisionEnabled(ECollisionEnabled::NoCollision); 
 			Player->OnHookHit(HitComponent, OtherActor, OtherComp, NormalImpulse, Hit);
 		}
 	}
@@ -90,5 +90,16 @@ void AHookProjectile::ShootDirection(const FVector Direction)
 USceneComponent* AHookProjectile::GetCableAttachmentPoint() const
 {
 	return CableAttachmentPoint;
+}
+
+void AHookProjectile::SetSpeed(const float Speed)
+{
+	ProjectileMovementComponent->InitialSpeed = Speed;
+	ProjectileMovementComponent->MaxSpeed = Speed;
+}
+
+void AHookProjectile::SetMeshRotation(const FRotator NewRotation)
+{
+	HookMesh->SetRelativeRotation(NewRotation);
 }
 

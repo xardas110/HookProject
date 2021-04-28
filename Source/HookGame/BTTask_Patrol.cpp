@@ -4,7 +4,6 @@
 #include "BTTask_Patrol.h"
 #include "AIController.h"
 #include "AIControllerBase.h"
-#include "AIParamaterComponent.h"
 
 UBTTask_Patrol::UBTTask_Patrol() {
 	NodeName = TEXT("MoveToPatrol");
@@ -20,7 +19,6 @@ EBTNodeResult::Type UBTTask_Patrol::ExecuteTask(UBehaviorTreeComponent& OwnerCom
 		UE_LOG(LogTemp, Error, TEXT("Couldn't get AI owner"));
 		return EBTNodeResult::Failed;
 	}
-	FVector PatrolLength = OwnerComp.GetAIOwner()->GetPawn()->FindComponentByClass<UAIParamaterComponent>()->PatrolDistance;
 	
 	return EBTNodeResult::Succeeded;
 }

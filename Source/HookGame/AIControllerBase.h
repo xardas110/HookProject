@@ -20,15 +20,14 @@ public:
 
 	bool bPatrolFinished = false;
 
-	
-
 protected:
 	AAIControllerBase();
 	virtual void BeginPlay() override;
-
+	
 	class UAIParamaterComponent* OwnerParameters{ nullptr };
-private:
+
+	bool bCanSeePlayer = false;
+
 	UPROPERTY(EditAnywhere)
 		class UBehaviorTree* AIBehavior;
-
 };
