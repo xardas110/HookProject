@@ -17,8 +17,6 @@ class HOOKGAME_API USkillTreeWidget : public UUserWidget
 
 public:
 
-	virtual void OnCreationFromPalette() override;
-	
 	UPROPERTY(meta = (BindWidget))
 	class UButton* GrappleSpeedButton;
 
@@ -31,6 +29,4 @@ public:
 	UPROPERTY(meta = (BindWidget))
 	class UTextBlock* Title;
 
-	UPROPERTY(meta = (BindWidget))
-	class UTextBlock* LevelUpText;
 };

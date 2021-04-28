@@ -7,7 +7,6 @@
 #include "Math/UnrealMathUtility.h"
 #include "Components/SphereComponent.h"
 #include "HookProjectile.h"
-#include "Usp"
 
 #define _DEBUG_QUEENSQUIDBASE
 
