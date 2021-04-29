@@ -408,8 +408,8 @@ private:
 	UPROPERTY(EditAnywhere, Category = "Depth Projection Texture")
 	class UTextureRenderTarget2D* DepthProjectionTexture{ nullptr };
 	
+	bool bJump{ false };
 	//-----------------------------------------------------------
-	
 protected:
 	virtual void OnFirePressed();
 	

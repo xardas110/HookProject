@@ -24,6 +24,7 @@
 #include "GrappleTraceComponent.h"
 #include "GrappleTracer.h"
 
+
 typedef APlayerBase THIS;
 
 constexpr auto CharacterTopBone = TEXT("Head");
@@ -32,6 +33,8 @@ constexpr auto CharacterSpine2 = TEXT("Head");
 constexpr auto CharacterHips = TEXT("Belly");
 constexpr auto CharacterSwordSocket = TEXT("SwordSocket");
 constexpr auto CharacterHookSpawnPoint = TEXT("HookSocket");
+
+bool bJump{false};
 
 #define CreateObjectAndLog(Name, Type) \
 Name = CreateDefaultSubobject<USkillTree>(TEXT(#Name)); \
@@ -88,6 +91,12 @@ void APlayerBase::BeginPlay()
 void APlayerBase::Tick(float DeltaTime)
 {
 	Super::Tick(DeltaTime);
+
+	if (bJump)
+	{
+		Jump();
+	}
+	
 	CameraUpdate(DeltaTime);
 	HookUpdate(DeltaTime);
 	VaultingUpdate(DeltaTime);
@@ -353,8 +362,13 @@ FVector APlayerBase::CalculateGrappleFireDirection() const
 	
 #ifdef _DEBUG_CALCULATE_GRAPPLE_FIRE_DIRECTION
 	DrawDebugLine(GetWorld(), MouseWorldLocation, MouseWorldLocation + MouseWorldDirection* 2000.f, FColor::Green, true, 5.f, 0, 2.f);
-#endif	
-	const auto PlaneImpactPoint = FMath::RayPlaneIntersection(MouseWorldLocation, MouseWorldDirection, Plane);
+#endif
+	FHitResult RayHitAll;
+	FVector PlaneImpactPoint{ FVector::ZeroVector };
+	if (PlayerController->GetHitResultUnderCursor(ECollisionChannel::ECC_Visibility, true, RayHitAll))
+		PlaneImpactPoint = RayHitAll.ImpactPoint;
+	else
+		PlaneImpactPoint = FMath::RayPlaneIntersection(MouseWorldLocation, MouseWorldDirection, Plane);
 #ifdef _DEBUG_CALCULATE_GRAPPLE_FIRE_DIRECTION
 	DrawDebugPoint(GetWorld(), PlaneImpactPoint, 10.f, FColor::Red, true, 2.f, 0);
 #endif
@@ -1371,12 +1385,14 @@ void APlayerBase::OnJumpPressed()
 {
 	if (!CompareAttackState(AttackState::Default))
 		return;
-	
+
+	bJump = true;
 	Jump();
 }
 
 void APlayerBase::OnJumpReleased()
 {
+	bJump = false;
 	StopJumping();
 }
 
@@ -1394,7 +1410,8 @@ void APlayerBase::CursorUpdate(const float DeltaTime)
 {
 	const auto PlayerController = Cast<APlayerController>(GetController());
 	ReturnIfNull(PlayerController);
-
+	ReturnIfNull(Hook);
+	
 	if (bInMenu)
 	{
 		SetMouseCursor(PlayerController, EMouseCursor::Default);
@@ -1403,13 +1420,38 @@ void APlayerBase::CursorUpdate(const float DeltaTime)
 
 	FHitResult Hit;	TArray<TEnumAsByte<EObjectTypeQuery>> ObjectQuery;
 	ObjectQuery.Push(EObjectTypeQuery::ObjectTypeQuery8);
-	const bool bHit = PlayerController->GetHitResultUnderCursorForObjects(ObjectQuery, true, Hit);
+	int bHit = PlayerController->GetHitResultUnderCursorForObjects(ObjectQuery, true, Hit);
 
-	const auto ImpactPoint = Hit.ImpactPoint;
-	const auto PlayerLocation = GetActorLocation();
-	const auto PlayerToImpact = ImpactPoint - PlayerLocation;
+	FVector ImpactPoint{ FVector::ZeroVector };
 
-	if (bHit && PlayerToImpact.Size() < HookMaxRange)
+	if (bHit)
+	{
+		if (auto Tracer = Hit.Actor->FindComponentByClass<UGrappleTracer>())
+			ImpactPoint = Tracer->GrapplePoint->GetComponentLocation();
+		else if (auto Tracer1 = Hit.Actor->FindComponentByClass<UGrappleTraceComponent>())
+			ImpactPoint = Tracer1->GrapplePoint->GetComponentLocation();
+		else
+			ImpactPoint = Hit.ImpactPoint;
+	}
+	
+	const auto HookLocation = GetActorLocation();
+	const auto HookToImpact = ImpactPoint - HookLocation;
+	const auto HookToImpactDir = HookToImpact / HookToImpact.Size();
+	
+	if (bHit)
+	{
+		FHitResult SceneHit; FCollisionQueryParams Params;
+		Params.AddIgnoredActor(this);
+		Params.AddIgnoredActor(Hook);
+		Params.AddIgnoredActor(SwordPtr);
+		Params.bTraceComplex = true;
+		
+		bHit *= GetWorld()->LineTraceSingleByChannel(SceneHit, HookLocation, HookLocation + (HookToImpactDir*HookMaxRange), ECollisionChannel::ECC_Visibility, Params);
+		DrawDebugLine(GetWorld(), HookLocation, HookLocation + HookToImpact, FColor::Red, false, -1, 0, 5.f);
+		bHit *= SceneHit.Actor == Hit.Actor;
+	}
+	
+	if (bHit && HookToImpact.Size() < HookMaxRange)
 		SetMouseCursor(PlayerController, EMouseCursor::Crosshairs);
 	else
 		SetMouseCursor(PlayerController, EMouseCursor::Hand);
