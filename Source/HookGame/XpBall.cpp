@@ -9,7 +9,9 @@ AXpBall::AXpBall()
 {
  	// Set this actor to call Tick() every frame.  You can turn this off to improve performance if you don't need it.
 	PrimaryActorTick.bCanEverTick = true;
-
+	PrimaryActorTick.bStartWithTickEnabled = false;
+	
+	
 	InnerSphere = CreateDefaultSubobject<USphereComponent>(TEXT("Inner Sphere"));	
 	OuterSphere = CreateDefaultSubobject<USphereComponent>(TEXT("Outer Sphere"));
 	Mesh = CreateDefaultSubobject<UStaticMeshComponent>(TEXT("Xp ball mesh"));
@@ -34,7 +36,6 @@ void AXpBall::BeginPlay()
 void AXpBall::Tick(float DeltaTime)
 {
 	Super::Tick(DeltaTime);
-
 	if (PlayerRef)
 	{
 		const auto MyLocation = GetActorLocation();
@@ -48,8 +49,12 @@ void AXpBall::Tick(float DeltaTime)
 void AXpBall::OnBeginOverlapOuterSphere(UPrimitiveComponent* OverlappedComponent, AActor* OtherActor,
 	UPrimitiveComponent* OtherComp, int32 OtherBodyIndex, bool bFromSweep, const FHitResult& SweepResult)
 {
+	//Just in case other channels use player object channel
 	if (OtherActor->IsA(APlayerBase::StaticClass()))
-		PlayerRef = OtherActor;	
+	{
+		PlayerRef = OtherActor;
+		PrimaryActorTick.SetTickFunctionEnable(true);
+	}
 }
 
 void AXpBall::OnBeginOverlapInnerSphere(UPrimitiveComponent* OverlappedComponent, AActor* OtherActor,

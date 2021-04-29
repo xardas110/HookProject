@@ -11,7 +11,7 @@
 #include "GameFramework/CharacterMovementComponent.h"
 #include "AIRobotSidekick.h"
 
-#define _DEBUG_AIBEHAVIOR
+//#define _DEBUG_AIBEHAVIOR
 
 AAIBehaviorBase::AAIBehaviorBase()
 {
@@ -44,7 +44,7 @@ void AAIBehaviorBase::OnAttach()
 	UE_LOG(LogTemp, Warning, TEXT("enemy has been grappled!"));
 #endif
 	bIsGrabbed = true;
-	bCanAttack = false;
+	GetCapsuleComponent()->SetCollisionEnabled(ECollisionEnabled::NoCollision);
 }
 
 void AAIBehaviorBase::OnDetach()
@@ -53,10 +53,12 @@ void AAIBehaviorBase::OnDetach()
 	UE_LOG(LogTemp, Warning, TEXT("enemy has been released!"));
 #endif
 	bIsGrabbed = false;
+	bCanAttack = false;
 	CurrentStunDuration = 0.f;
 	
 	SetActorRotation(FRotator::ZeroRotator);
 	AddActorWorldOffset({ 0.f, 0.f, GetCapsuleComponent()->GetScaledCapsuleHalfHeight()});
+	GetCapsuleComponent()->SetCollisionEnabled(ECollisionEnabled::QueryAndPhysics);
 }
 
 void AAIBehaviorBase::OnBeginOverlapAttack()
@@ -74,7 +76,7 @@ void AAIBehaviorBase::OnEndOverlapAttack()
 }
 
 void AAIBehaviorBase::Attack()
-{
+{	
 #ifdef _DEBUG_AIBEHAVIOR
 	UE_LOG(LogTemp, Warning, TEXT("Default Attack Initiated, Bool change"));
 #endif
@@ -82,6 +84,7 @@ void AAIBehaviorBase::Attack()
 
 void AAIBehaviorBase::EndAttack()
 {
+	DamagedActors.Empty();
 #ifdef _DEBUG_AIBEHAVIOR
 	UE_LOG(LogTemp, Warning, TEXT("Default Attack Ended, bool change"));
 #endif
@@ -195,9 +198,8 @@ float AAIBehaviorBase::TakeDamage(float DamageAmount, FDamageEvent const& Damage
 #ifdef _DEBUG_AIBEHAVIOR
 		UE_LOG(LogTemp, Warning, TEXT("No health remaining"));
 #endif
-		
+		bIsDead = true;
 		HandleDeath();
-		bIsDead=true;
 	}
 	return IncomingDamage;
 }

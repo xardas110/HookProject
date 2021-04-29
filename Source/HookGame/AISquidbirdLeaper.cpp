@@ -32,13 +32,12 @@ void AAISquidbirdLeaper::BeginAttack()
 
 void AAISquidbirdLeaper::Leap()
 {
-	GetCharacterMovement()->SetMovementMode(EMovementMode::MOVE_Flying);
-	
-	
+	GetCharacterMovement()->SetMovementMode(EMovementMode::MOVE_Flying);	
 }
 
 void AAISquidbirdLeaper::EndAttack()
 {
+	AAIBehaviorBase::EndAttack();
 	bIsAttacking = false;
 	GetCharacterMovement()->SetMovementMode(EMovementMode::MOVE_Walking);
 }
@@ -46,7 +45,6 @@ void AAISquidbirdLeaper::EndAttack()
 void AAISquidbirdLeaper::Tick(float DeltaSeconds)
 {
 	Super::Tick(DeltaSeconds);
-	
 	if(bIsAttacking)
 	{
 		Leap();

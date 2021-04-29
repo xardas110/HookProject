@@ -2,6 +2,7 @@
 
 
 #include "GrappleTracer.h"
+#include "AIBehaviorBase.h"
 #include "Components/BoxComponent.h"
 
 // Sets default values for this component's properties
@@ -25,4 +26,9 @@ void UGrappleTracer::TickComponent(float DeltaTime, ELevelTick TickType, FActorC
 	Super::TickComponent(DeltaTime, TickType, ThisTickFunction);
 	GrapplePoint->SetWorldLocation(GetOwner()->GetActorLocation());
 	ComponentExtent->SetWorldLocation(GetOwner()->GetActorLocation());
+
+	if (auto const AI = Cast<AAIBehaviorBase>(GetOwner()))
+		if (AI->bIsDead)
+			ComponentExtent->SetCollisionEnabled(ECollisionEnabled::NoCollision);
+
 }

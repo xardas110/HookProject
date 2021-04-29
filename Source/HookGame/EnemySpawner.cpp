@@ -105,14 +105,14 @@ void AEnemySpawner::SpawnSquidBird()
 		if (!SpawnedSquidbirdCount[ix] || SpawnedSquidbirdCount[ix]->IsPendingKill() || SpawnedSquidbirdCount[ix]->bIsDead)
 		{
 			EnemiesToRemove.Push(ix);
-			UE_LOG(LogTemp, Warning, TEXT("ForLoop1: EnmiesToRemovePushed"))
+			/*UE_LOG(LogTemp, Warning, TEXT("ForLoop1: EnmiesToRemovePushed"))*/
 		}
 	}
 
 	for (auto index : EnemiesToRemove)
 	{
 		SpawnedSquidbirdCount.RemoveAt(index);
-		UE_LOG(LogTemp, Warning, TEXT("ForLoop2: Index entered"))
+		/*UE_LOG(LogTemp, Warning, TEXT("ForLoop2: Index entered"))*/
 		bEnemyIsDead = true;
 		SpawnTimer = 0.f;
 	}
@@ -163,11 +163,11 @@ void AEnemySpawner::SpawnSquidBird()
 				if(SpawnedActor)
 				{
 					SpawnedSquidbirdCount.Push(SpawnedActor);
-					UE_LOG(LogTemp, Warning, TEXT("Respawn enemy spawned"))
+					/*UE_LOG(LogTemp, Warning, TEXT("Respawn enemy spawned"))*/
 					bEnemyIsDead = false;
 				}
 				
-				UE_LOG(LogTemp, Warning, TEXT("Spawned an enemytype: Squidbird"));
+				/*UE_LOG(LogTemp, Warning, TEXT("Spawned an enemytype: Squidbird"));*/
 			}
 		}
 
@@ -188,14 +188,14 @@ void AEnemySpawner::SpawnSquidBirdSprinter()
 		if (!SpawnedSquidSprintCount[ix] || SpawnedSquidSprintCount[ix]->IsPendingKill() || SpawnedSquidSprintCount[ix]->bIsDead)
 		{
 			EnemiesToRemove.Push(ix);
-			UE_LOG(LogTemp, Warning, TEXT("ForLoop1: EnmiesToRemovePushed"))
+			/*UE_LOG(LogTemp, Warning, TEXT("ForLoop1: EnmiesToRemovePushed"))*/
 		}
 	}
 
 	for (auto index : EnemiesToRemove)
 	{
 		SpawnedSquidSprintCount.RemoveAt(index);
-		UE_LOG(LogTemp, Warning, TEXT("ForLoop2: Index entered"))
+		/*UE_LOG(LogTemp, Warning, TEXT("ForLoop2: Index entered"))*/
 		bEnemyIsDead = true;
 		SpawnTimer = 0.f;
 	}
@@ -222,7 +222,7 @@ void AEnemySpawner::SpawnSquidBirdSprinter()
 					bEnemyIsDead = false;
 					SpawnedEnemiesCounter++;
 
-					UE_LOG(LogTemp, Warning, TEXT("Spawned an enemytype: SquidbirdSprinter"));
+					/*UE_LOG(LogTemp, Warning, TEXT("Spawned an enemytype: SquidbirdSprinter"));*/
 				}
 
 			}
@@ -254,7 +254,7 @@ void AEnemySpawner::SpawnSquidBirdSprinter()
 					bEnemyIsDead = false;
 					SpawnedEnemiesCounter++;
 					
-					UE_LOG(LogTemp, Warning, TEXT("Spawned an enemytype: SquidbirdSprinter"));
+					/*UE_LOG(LogTemp, Warning, TEXT("Spawned an enemytype: SquidbirdSprinter"));*/
 				}
 				
 			}
@@ -275,14 +275,14 @@ void AEnemySpawner::SpawnSquidBirdLeaper()
 		if (!SpawnedSquidLeapCount[ix] || SpawnedSquidLeapCount[ix]->IsPendingKill() || SpawnedSquidLeapCount[ix]->bIsDead)
 		{
 			EnemiesToRemove.Push(ix);
-			UE_LOG(LogTemp, Warning, TEXT("ForLoop1: EnmiesToRemovePushed"))
+			/*UE_LOG(LogTemp, Warning, TEXT("ForLoop1: EnmiesToRemovePushed"))*/
 		}
 	}
 
 	for (auto index : EnemiesToRemove)
 	{
 		SpawnedSquidLeapCount.RemoveAt(index);
-		UE_LOG(LogTemp, Warning, TEXT("ForLoop2: Index entered"))
+		/*UE_LOG(LogTemp, Warning, TEXT("ForLoop2: Index entered"))*/
 		bEnemyIsDead = true;
 		SpawnTimer = 0.f;
 	}
@@ -310,7 +310,7 @@ void AEnemySpawner::SpawnSquidBirdLeaper()
 					bEnemyIsDead = false;
 				}
 
-				UE_LOG(LogTemp, Warning, TEXT("Spawned an enemytype: SquidbirdLeaper"));
+				/*UE_LOG(LogTemp, Warning, TEXT("Spawned an enemytype: SquidbirdLeaper"));*/
 			}
 		}
 
@@ -341,7 +341,7 @@ void AEnemySpawner::SpawnSquidBirdLeaper()
 					bEnemyIsDead = false;
 				}
 				
-				UE_LOG(LogTemp, Warning, TEXT("Spawned an enemytype: SquidbirdLeaper"));
+				/*UE_LOG(LogTemp, Warning, TEXT("Spawned an enemytype: SquidbirdLeaper"));*/
 			}
 		}
 
@@ -361,14 +361,14 @@ void AEnemySpawner::SpawnFlameGulper()
 		if (!SpawnedFlameGulperCount[ix] || SpawnedFlameGulperCount[ix]->IsPendingKill() || SpawnedFlameGulperCount[ix]->bIsDead)
 		{
 			EnemiesToRemove.Push(ix);
-			UE_LOG(LogTemp, Warning, TEXT("ForLoop1: EnmiesToRemovePushed"))
+			/*UE_LOG(LogTemp, Warning, TEXT("ForLoop1: EnmiesToRemovePushed"))*/
 		}
 	}
 
 	for (auto index : EnemiesToRemove)
 	{
 		SpawnedFlameGulperCount.RemoveAt(index);
-		UE_LOG(LogTemp, Warning, TEXT("ForLoop2: Index entered"))
+		/*UE_LOG(LogTemp, Warning, TEXT("ForLoop2: Index entered"))*/
 		bEnemyIsDead = true;
 		SpawnTimer = 0.f;
 	}
@@ -398,7 +398,7 @@ void AEnemySpawner::SpawnFlameGulper()
 					bEnemyIsDead = false;
 				}
 				
-				UE_LOG(LogTemp, Warning, TEXT("Spawned an enemytype: FlameGulper"));
+				/*UE_LOG(LogTemp, Warning, TEXT("Spawned an enemytype: FlameGulper"));*/
 			}
 		}
 	
@@ -431,7 +431,7 @@ void AEnemySpawner::SpawnFlameGulper()
 					bEnemyIsDead = false;
 				}
 
-				UE_LOG(LogTemp, Warning, TEXT("Spawned an enemytype: FlameGulper"));
+				/*UE_LOG(LogTemp, Warning, TEXT("Spawned an enemytype: FlameGulper"));*/
 			}
 		}
 	}
@@ -450,14 +450,14 @@ void AEnemySpawner::SpawnGatlingGulper()
 		if (!SpawnedGatlingGulperCount[ix] || SpawnedGatlingGulperCount[ix]->IsPendingKill() || SpawnedGatlingGulperCount[ix]->bIsDead)
 		{
 			EnemiesToRemove.Push(ix);
-			UE_LOG(LogTemp, Warning, TEXT("ForLoop1: EnmiesToRemovePushed"))
+			/*UE_LOG(LogTemp, Warning, TEXT("ForLoop1: EnmiesToRemovePushed"))*/
 		}
 	}
 
 	for (auto index : EnemiesToRemove)
 	{
 		SpawnedGatlingGulperCount.RemoveAt(index);
-		UE_LOG(LogTemp, Warning, TEXT("ForLoop2: Index entered"))
+		//UE_LOG(LogTemp, Warning, TEXT("ForLoop2: Index entered"))
 		bEnemyIsDead = true;
 		SpawnTimer = 0.f;
 	}
@@ -485,7 +485,7 @@ void AEnemySpawner::SpawnGatlingGulper()
 					bEnemyIsDead = false;
 				}
 
-				UE_LOG(LogTemp, Warning, TEXT("Spawned an enemytype: GatlingGulper"));
+				//UE_LOG(LogTemp, Warning, TEXT("Spawned an enemytype: GatlingGulper"));
 			}
 		}
 
@@ -516,7 +516,7 @@ void AEnemySpawner::SpawnGatlingGulper()
 					bEnemyIsDead = false;
 				}
 				
-				UE_LOG(LogTemp, Warning, TEXT("Spawned an enemytype: GatlingGulper"));
+				//UE_LOG(LogTemp, Warning, TEXT("Spawned an enemytype: GatlingGulper"));
 			}
 		}
 	}
@@ -532,14 +532,14 @@ void AEnemySpawner::UpdateSquidBirdArray()
 		if (!SpawnedSquidbirdCount[ix] || SpawnedSquidbirdCount[ix]->IsPendingKill() || SpawnedSquidbirdCount[ix]->bIsDead)
 		{
 			EnemiesToRemove.Push(ix);
-			UE_LOG(LogTemp, Warning, TEXT("ForLoop1: EnmiesToRemovePushed"))
+			//UE_LOG(LogTemp, Warning, TEXT("ForLoop1: EnmiesToRemovePushed"))
 		}
 	}
 
 	for (auto index : EnemiesToRemove)
 	{
 		SpawnedSquidbirdCount.RemoveAt(index);
-		UE_LOG(LogTemp, Warning, TEXT("ForLoop2: Index entered"))
+		//UE_LOG(LogTemp, Warning, TEXT("ForLoop2: Index entered"))
 	}
 	
 }

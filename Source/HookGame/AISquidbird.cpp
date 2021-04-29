@@ -8,7 +8,7 @@
 #include "Components/CapsuleComponent.h"
 #include "GameFramework/CharacterMovementComponent.h"
 
-#define _DEBUG_SQUIDBIRD
+//#define _DEBUG_SQUIDBIRD
 
 AAISquidbird::AAISquidbird()
 {
@@ -21,6 +21,7 @@ void AAISquidbird::BeginPlay()
 	Super::BeginPlay();
 	GetCharacterMovement()->RotationRate = FRotator(0.0f, 540.0f, 0.0f);
 	AttackHitbox->OnComponentBeginOverlap.AddDynamic(this, &AAISquidbird::OnBeginOverlap);
+	AttackHitbox->SetGenerateOverlapEvents(false);
 }
 
 void AAISquidbird::OnBeginOverlapAttack() {
@@ -52,6 +53,7 @@ void AAISquidbird::Attack()
 
 void AAISquidbird::EndAttack()
 {
+	AAIBehaviorBase::EndAttack();
 	bIsAttacking = false;
 	if (!bHasRabies) {
 		GetCharacterMovement()->SetMovementMode(EMovementMode::MOVE_Walking);
@@ -65,7 +67,7 @@ void AAISquidbird::Dodge()
 {
 	if (bPlayerInRange)
 	{
-			AddActorLocalOffset(DodgeOffset);
+		AddActorLocalOffset(DodgeOffset);
 	}
 }
 
@@ -81,7 +83,6 @@ void AAISquidbird::HandleDeath()
 	GetMesh()->SetCollisionEnabled(ECollisionEnabled::QueryAndPhysics);
 	GetCapsuleComponent()->SetCollisionEnabled(ECollisionEnabled::NoCollision);
 	AttackHitbox->SetCollisionEnabled(ECollisionEnabled::NoCollision);
-	
 }
 
 void AAISquidbird::OnBeginOverlap(UPrimitiveComponent* OverlappedComponent, AActor* OtherActor,
@@ -89,21 +90,18 @@ void AAISquidbird::OnBeginOverlap(UPrimitiveComponent* OverlappedComponent, AAct
 {
 	if(OtherActor->IsA(APlayerBase::StaticClass()))
 	{
-		const auto PlayerController = GetWorld()->GetFirstPlayerController();
-		if (PlayerController)
+	const auto PlayerController = GetWorld()->GetFirstPlayerController();
+	ReturnIfNull(PlayerController);
+
+		if (!DamagedActors.Contains(OtherActor))
 		{
 			FDamageEvent DamageEvent;
 			PlayerController->GetPawn()->TakeDamage(AttackDamage, DamageEvent, Controller, this);
-#ifdef _DEBUG_SQUIDBIRD
-			UE_LOG(LogTemp, Warning, TEXT("Dealt Damage to player"));
-#endif
+			DamagedActors.Push(OtherActor);
 		}
-		else
-		{
 #ifdef _DEBUG_SQUIDBIRD
-			UE_LOG(LogTemp, Error, TEXT("PlayerController not found!"));
+		UE_LOG(LogTemp, Warning, TEXT("Dealt Damage to player"));
 #endif
-		}
 	}
 }
 

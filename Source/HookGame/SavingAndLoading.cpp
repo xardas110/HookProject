@@ -25,11 +25,11 @@ void USavingAndLoading::SaveLevelName(FName Level)
 	{
 		SavedLevel = LevelString;
 
-		UE_LOG(LogTemp, Warning, TEXT("The saved level is %s. Went to if."), *SavedLevel)
+		/*UE_LOG(LogTemp, Warning, TEXT("The saved level is %s. Went to if."), *SavedLevel)*/
 	}
 	else
 	{
-		UE_LOG(LogTemp, Warning, TEXT("The saved level is %s. Went to else"), *SavedLevel)
+		//UE_LOG(LogTemp, Warning, TEXT("The saved level is %s. Went to else"), *SavedLevel)
 	}
 
 }
@@ -43,7 +43,7 @@ void USavingAndLoading::OpenLevel()
 
 	if (SavedLevel == CurrentLevelString)
 	{
-		UE_LOG(LogTemp, Warning, TEXT("YOU ARE IN THE CURRENT LEVEL"))
+		/*UE_LOG(LogTemp, Warning, TEXT("YOU ARE IN THE CURRENT LEVEL"))*/
 	}
 
 	else

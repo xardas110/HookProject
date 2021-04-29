@@ -11,8 +11,8 @@ class HOOKGAME_API AAIBehaviorBase : public ACharacter
 {
 	GENERATED_BODY()
 
-	
-		friend class UExperienceComponent;
+	friend class UExperienceComponent;
+	friend class UGrappleTracer;
 public:
 	// Sets default values for this character's properties
 	AAIBehaviorBase();
@@ -65,6 +65,9 @@ public:
 	bool bPlayerInRange = false;
 	bool bReturnToStart = true;
 protected:
+	UPROPERTY()
+	TArray<AActor*> DamagedActors;
+	
 	// Called when the game starts or when spawned
 	virtual void BeginPlay() override;
 
@@ -96,8 +99,6 @@ protected:
 	float StandingZValue=0.f;
 	bool bIsStanding = true;
 	
-	
-
 public:	
 	// Called every frame
 	virtual void Tick(float DeltaTime) override;

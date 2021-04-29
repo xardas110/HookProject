@@ -33,15 +33,10 @@ constexpr auto CharacterHips = TEXT("Belly");
 constexpr auto CharacterSwordSocket = TEXT("SwordSocket");
 constexpr auto CharacterHookSpawnPoint = TEXT("HookSocket");
 
-
-
-
 #define CreateObjectAndLog(Name, Type) \
 Name = CreateDefaultSubobject<USkillTree>(TEXT(#Name)); \
 if (!SkillTreeFuckUnreal) \
 	UE_LOG(LogTemp, Error, TEXT("Failed to create; %s"), *FString(#Name));
-
-
 
 #ifdef _DEBUG_ALL
 #define _DEBUG_VAULTING
@@ -203,11 +198,17 @@ void APlayerBase::CameraRotationUpdate(const float DeltaTime)
 	if (!AssociatedTriggerBox)
 		return;
 
+	auto const RotateCamera = [&DeltaTime](const FRotator &Current, const FRotator &Target, const float Speed)
+	{
+		return FMath::RInterpConstantTo(Current, Target, DeltaTime, Speed);	
+	};
+	
 	if (AssociatedTriggerBox->Reverse)
 	{
 		const auto CameraRotation = SpringArm->GetRelativeRotation();
-		const auto NewRotation = FMath::Lerp(CameraRotation, AssociatedTriggerBox->EndOverlapRotation, AssociatedTriggerBox->RotationSpeed * DeltaTime);
+		const auto NewRotation = RotateCamera(CameraRotation, AssociatedTriggerBox->EndOverlapRotation, AssociatedTriggerBox->RotationSpeed);
 		SpringArm->SetRelativeRotation(NewRotation);
+		
 		if (NewRotation.Equals(AssociatedTriggerBox->EndOverlapRotation, 1.f))
 		{
 			AssociatedTriggerBox->Reverse = false;
@@ -217,8 +218,13 @@ void APlayerBase::CameraRotationUpdate(const float DeltaTime)
 	else if (AssociatedTriggerBox->bOnBeginOverlapRotation)
 	{
 		const auto CameraRotation = SpringArm->GetRelativeRotation();	
-		const auto NewRotation = FMath::Lerp(CameraRotation, AssociatedTriggerBox->BeginOverlapRotation, AssociatedTriggerBox->RotationSpeed * DeltaTime);
+		const auto NewRotation = RotateCamera(
+			CameraRotation, 
+			AssociatedTriggerBox->BeginOverlapRotation, 
+			AssociatedTriggerBox->RotationSpeed
+		);		
 		SpringArm->SetRelativeRotation(NewRotation);
+		
 		if (NewRotation.Equals(AssociatedTriggerBox->BeginOverlapRotation, 1.f) && !AssociatedTriggerBox->bOnEndOverlapRotation)
 		{
 			AssociatedTriggerBox = nullptr;
@@ -296,7 +302,8 @@ FVector APlayerBase::CalculateGrappleFireDirection() const
 	const auto PlayerController = Cast<APlayerController>(GetController());
 	if (!Hook || !PlayerController)
 		return DirToTarget;
-	
+
+
 	TArray<TEnumAsByte<EObjectTypeQuery>> ObjectQuery;
 	TArray<TEnumAsByte<EObjectTypeQuery>> ObjectQueryComplex;
 	ObjectQuery.Push(ObjectTypeQuery8);
@@ -389,8 +396,9 @@ FVector APlayerBase::CalculateGrappleFireDirection() const
 			return HookToTarget(GT->GrapplePoint->GetComponentLocation());
 			
 	}
-
+	
 	return HookToMouseDir;
+	
 }
 void APlayerBase::VaultingUpdate(const float DeltaTime)
 {
@@ -729,9 +737,7 @@ void APlayerBase::HookFire()
 
 #ifdef _DEBUG_GRAPPLE
 			UE_LOG(LogTemp, Error, TEXT("Shooting attached component"));
-#endif
-
-		
+#endif	
 }
 
 void APlayerBase::TryEnterHookFireTransition()
@@ -989,6 +995,7 @@ void APlayerBase::HandleDeath()
 	//GetCharacterMovement()->DisableMovement();
 	GetMesh()->SetSimulatePhysics(true);
 	GetMesh()->SetCollisionEnabled(ECollisionEnabled::QueryAndPhysics);
+	GetCapsuleComponent()->SetCollisionEnabled(ECollisionEnabled::NoCollision);
 	const auto PController = Cast<APlayerController>(GetController());
 	if (PController)
 	{
@@ -1169,7 +1176,7 @@ float APlayerBase::TakeDamage(float DamageAmount, FDamageEvent const& DamageEven
 {
 	const auto IncomingDamage = Super::TakeDamage(DamageAmount, DamageEvent, EventInstigator, DamageCauser);
 
-	OnPlayerKnockBack(DamageCauser->GetActorLocation(), PlayerOnKnockBackValue);
+	//OnPlayerKnockBack(DamageCauser->GetActorLocation(), PlayerOnKnockBackValue);
 	
 	CurrentHealth -= FMath::Min(CurrentHealth, IncomingDamage);
 	if (CurrentHealth <= 0.f)
@@ -1396,7 +1403,7 @@ void APlayerBase::CursorUpdate(const float DeltaTime)
 
 	FHitResult Hit;	TArray<TEnumAsByte<EObjectTypeQuery>> ObjectQuery;
 	ObjectQuery.Push(EObjectTypeQuery::ObjectTypeQuery8);
-	const bool bHit = PlayerController->GetHitResultUnderCursorForObjects(ObjectQuery, false, Hit);
+	const bool bHit = PlayerController->GetHitResultUnderCursorForObjects(ObjectQuery, true, Hit);
 
 	const auto ImpactPoint = Hit.ImpactPoint;
 	const auto PlayerLocation = GetActorLocation();
@@ -1553,27 +1560,10 @@ void APlayerBase::CreateComponents()
 	CameraComponent->SetupAttachment(SpringArm);
 
 	GrappleCable = CreateDefaultSubobject<UCableComponent>(TEXT("Grapple Cable"));
-
-	//PlayerShadow = CreateDefaultSubobject<UDecalComponent>(TEXT("Player Shadow"));
-	//PlayerShadow->SetupAttachment(RootComponent);
-
-	/*
-	ConstructorHelpers::FClassFinder<AActor> OBJ(TEXT("/Game/Blueprints/FastTest"));
-	if (OBJ.Succeeded())
-	{
-		UE_LOG(LogTemp, Error, TEXT("Obj found"));
-		SpawnThisClass = OBJ.Class;
-}
-	else
-	{
-		UE_LOG(LogTemp, Error, TEXT("Obj not found"));
-	}
-	*/
 	
 	ShadowProjectionCamera = CreateDefaultSubobject<USceneCaptureComponent2D>(TEXT("Shadow Projection Camera"));
 	DepthProjectionCamera = CreateDefaultSubobject<USceneCaptureComponent2D>(TEXT("Depth Projection Camera"));
 	ShadowProjectionCameraArm = CreateDefaultSubobject<USpringArmComponent>(TEXT("Shadow Projection Arm"));
-	HookSpawnPoint = CreateDefaultSubobject<USceneComponent>(TEXT("Hook Spawn Point"));
 	
 	ShadowProjectionCameraArm->SetupAttachment(RootComponent);
 	ShadowProjectionCamera->SetupAttachment(ShadowProjectionCameraArm);
@@ -1588,9 +1578,6 @@ void APlayerBase::CreateComponents()
 	VaultCapsule->SetupAttachment(VaultBoxExtent);
 	VaultBoxExtent->bHiddenInGame = false;
 
-
-	
-	
 	SkillTreeFCRI = CreateDefaultSubobject<USkillTree>(TEXT("Skill tree"));
 	if(!SkillTreeFCRI)
 	{
@@ -1600,85 +1587,37 @@ void APlayerBase::CreateComponents()
 	{
 		UE_LOG(LogTemp, Error, TEXT("created skilltree"));
 	}
-	
-	//CreateObjectAndLog(SkillTreeFuckUnreal, USkillTree);
 }
 
 
 void APlayerBase::SaveGame()
 {
 	UHookGameInstance* GameInstanceRef = Cast<UHookGameInstance>(UGameplayStatics::GetGameInstance(GetWorld()));
-
-	if (GameInstanceRef)
-	{
-		UE_LOG(LogTemp, Warning, TEXT("Game instance found on save"))
-		GameInstanceRef->SaveGameData(this);
-	}
-
-	else
-	{
-		UE_LOG(LogTemp, Warning, TEXT("Save game failed"))
-	}
-
+	ReturnIfNull(GameInstanceRef);
+	GameInstanceRef->SaveGameData(this);
 }
 
 void APlayerBase::SaveLatestCheckpoint()
 {
 	UHookGameInstance* GameInstanceRef = Cast<UHookGameInstance>(UGameplayStatics::GetGameInstance(GetWorld()));
-
-	if (GameInstanceRef)
-	{
-		UE_LOG(LogTemp, Warning, TEXT("Game instance found on save"))
-		GameInstanceRef->SaveLatestCheckpoint(this);
-	}
-
-	else
-	{
-		UE_LOG(LogTemp, Warning, TEXT("Save checkpoint failed"))
-	}
-
+	ReturnIfNull(GameInstanceRef);
+	GameInstanceRef->SaveLatestCheckpoint(this);
 }
-
 void APlayerBase::LoadCheckpoint()
 {
-
 	UHookGameInstance* GameInstanceRef = Cast<UHookGameInstance>(UGameplayStatics::GetGameInstance(GetWorld()));
-
-	if (GameInstanceRef)
-	{
-		GameInstanceRef->LoadLatestCheckpoint(this);
-
-		UE_LOG(LogTemp, Warning, TEXT("Game instance found on load Checkpoint"))
-	}
-
-	else
-	{
-		UE_LOG(LogTemp, Warning, TEXT("Load checkpoint failed"))
-	}
-	
+	ReturnIfNull(GameInstanceRef);
+	GameInstanceRef->LoadLatestCheckpoint(this);
 }
-
 
 void APlayerBase::LoadGame()
 {
-
 	UHookGameInstance* GameInstanceRef = Cast<UHookGameInstance>(UGameplayStatics::GetGameInstance(GetWorld()));
-
-	if(GameInstanceRef)
-	{
-		GameInstanceRef->LoadGameData(this);
-
-		UE_LOG(LogTemp, Warning, TEXT("Game instance found on load"))
-	}
-
-	else
-	{
-		UE_LOG(LogTemp, Warning, TEXT("Load game failed"))
-	}
-	
+	ReturnIfNull(GameInstanceRef);
+	GameInstanceRef->LoadGameData(this);
 }
 
-float APlayerBase::GetPlayerToHookRotation()
+float APlayerBase::GetPlayerToHookRotation() const
 {
 	const FRotator A = (GetDirectionToHook() / GetDistanceToHook()).Rotation();
 	const FRotator B = GetActorRotation();
@@ -1687,19 +1626,18 @@ float APlayerBase::GetPlayerToHookRotation()
 	return FMath::ClampAngle(Delta.Yaw, -179.f, 179.f);
 }
 
-float APlayerBase::GetCurrentHealth()
+float APlayerBase::GetCurrentHealth() const
 {
 	return CurrentHealth;
 }
 
-float APlayerBase::GetMaxHealth()
+float APlayerBase::GetMaxHealth() const
 {
 	return MaxHealth;
 }
 
 void APlayerBase::InteractionActive(UPrimitiveComponent* HitComp, AActor* OtherActor, UPrimitiveComponent* OtherComp, int32 OtherIndex, bool bFromSweep, const FHitResult& SweepResult)
 {
-
 	if (OtherActor && (OtherActor != this) && OtherComp && (OtherActor->IsA(AAIRobotSidekick::StaticClass())))
 	{
 #ifdef _DEBUG_INTERACTION
@@ -1707,12 +1645,10 @@ void APlayerBase::InteractionActive(UPrimitiveComponent* HitComp, AActor* OtherA
 #endif
 		PlayerCanInteract = true;
 	}
-
 }
 
 void APlayerBase::InteractionNotActive(UPrimitiveComponent* HitComp, AActor* OtherActor, UPrimitiveComponent* OtherComp, int32 OtherIndex)
 {
-
 	if (PlayerCanInteract)
 	{
 		PlayerCanInteract = false;
@@ -1720,10 +1656,9 @@ void APlayerBase::InteractionNotActive(UPrimitiveComponent* HitComp, AActor* Oth
 		UE_LOG(LogTemp, Warning, TEXT("Player is not in the interaction area anymore"));
 #endif
 	}
-
 }
 
-void APlayerBase::OnIncomingXP(int32 Amount)
+void APlayerBase::OnIncomingXP(int32 Amount) const
 {
 	SkillTreeFCRI->AddExperience(Amount); 
 }
@@ -1745,7 +1680,7 @@ void APlayerBase::GeneratePlayerLines(UDataTable* PlayerLines)
 	AvailableLines = PlayerLines;	
 }
 
-void APlayerBase::OnPlayerKnockBack(const FVector& KnockBackFrom, float KnockBackValue)
+void APlayerBase::OnPlayerKnockBack(const FVector& KnockBackFrom, float KnockBackValue) const
 {
 	const auto PlayerLocation = GetActorLocation();
 	const auto TargetToPlayer = PlayerLocation - KnockBackFrom;
@@ -1756,7 +1691,6 @@ void APlayerBase::OnPlayerKnockBack(const FVector& KnockBackFrom, float KnockBac
 void APlayerBase::Talk(FString Excerpt, TArray<FSubtitle>& Subtitles)
 {
 	TArray<FName> PlayerOptions = AvailableLines->GetRowNames();
-
 	for (auto It : PlayerOptions)
 	{
 		FDialogue* Dialogue = RetrieveDialogue(AvailableLines, It);
@@ -1783,34 +1717,22 @@ void APlayerBase::Talk(FString Excerpt, TArray<FSubtitle>& Subtitles)
 				}
 
 				TotalSubsTime += SpeakerNPCDelay;
-
 				AssociatedNPC->AnswerPlayerCharacter(It, SubtitlesToDisplay, TotalSubsTime);
 
 			}
 			else if (!Dialogue->bShouldAIRespond) InteractWithNPC();
 			break;
 		}
-
-
-
 	}
-
 }
 
 void APlayerBase::SetInteractableNPC(AAIRobotSidekick* NPC)
-{
-	
-	InteractableNPC = NPC;
-	
+{	
+	InteractableNPC = NPC;	
 	if(InteractableNPC)
-	{
 		InteractionWidget->SetVisibility(ESlateVisibility::Visible);
-	}
 	else
-	{
-		InteractionWidget->SetVisibility(ESlateVisibility::Hidden);
-	}
-	
+		InteractionWidget->SetVisibility(ESlateVisibility::Hidden);	
 }
 
 void APlayerBase::DisplayInteractMessage()
@@ -1819,42 +1741,27 @@ void APlayerBase::DisplayInteractMessage()
 	UE_LOG(LogTemp, Warning, TEXT("DisplayInteractMessage"));
 #endif
 	const auto PlayerControllerReference = Cast<APlayerControllerBase>(Controller);
-	if (PlayerControllerReference)
+	ReturnIfNull(PlayerControllerReference);
+
+	const auto PlayerHUDRef = PlayerControllerReference->HUD;
+	ReturnIfNull(PlayerHUDRef);
+	
+	ReturnIfNull(InteractionWidget);
+	ReturnIfNull(PlayerCanInteract);
+						
+	if(InteractableNPC && !bNPCFollowPlayer)
 	{
-		const auto PlayerHUDRef = PlayerControllerReference->HUD;
-		if (PlayerHUDRef)
-		{
-			if(InteractionWidget)
-			{
-				if(PlayerCanInteract)
-				{
-					if(InteractableNPC && !bNPCFollowPlayer)
-					{
-						NPCPosition = InteractableNPC->GetActorLocation();
-#ifdef _DEBUG_INTERACTION
-						UE_LOG(LogTemp, Warning, TEXT("InteractableNPC"));
-#endif
-					}
-				}
-#ifdef _DEBUG_INTERACTION
-				UE_LOG(LogTemp, Warning, TEXT("PlayerHUDRef"));
-#endif
-				FVector2D PositionInViewport;
-				PlayerControllerReference->ProjectWorldLocationToScreen(NPCPosition, PositionInViewport);
-
-				FVector2D SizeOfInteractHUD{ InteractSizeX,InteractSizeY };
-				InteractionWidget->SetDesiredSizeInViewport(SizeOfInteractHUD);
-
-				PositionInViewport.X -= 50;
-				PositionInViewport.Y -= 90;
-
-				InteractionWidget->SetPositionInViewport(PositionInViewport);
-							
-			}
-			
-		}
+		NPCPosition = InteractableNPC->GetActorLocation();
 	}
-
+				
+	FVector2D PositionInViewport;
+	PlayerControllerReference->ProjectWorldLocationToScreen(NPCPosition, PositionInViewport);
+	
+	const FVector2D SizeOfInteractHUD{ InteractSizeX,InteractSizeY };
+	InteractionWidget->SetDesiredSizeInViewport(SizeOfInteractHUD);
+	PositionInViewport.X -= 50;
+	PositionInViewport.Y -= 90;
+	InteractionWidget->SetPositionInViewport(PositionInViewport);										
 }
 
 void APlayerBase::OnVaultBoxBeginOverlap(UPrimitiveComponent* HitComp, AActor* OtherActor,
@@ -1879,8 +1786,13 @@ void APlayerBase::OnVaultBoxBeginOverlap(UPrimitiveComponent* HitComp, AActor* O
 	const auto VaultCapsRadius = VaultCapsule->GetScaledCapsuleRadius();
 	const auto TraceEnd = VaultCapsule->GetComponentLocation() + (FVector::DownVector * VaultCapsHalfHeight);
 	FHitResult SphereHitResult;
-	TArray<AActor*> IgnoreActors;
-	auto bHit = UKismetSystemLibrary::SphereTraceSingle(GetWorld(), VaultCapsuleLocation, TraceEnd, VaultCapsRadius, ETraceTypeQuery::TraceTypeQuery1, true, IgnoreActors, EDrawDebugTrace::ForDuration, SphereHitResult, true, FLinearColor::Red);
+	const TArray<AActor*> IgnoreActors;
+
+#ifndef _DEBUG_VAULTING
+	const auto bHit = UKismetSystemLibrary::SphereTraceSingle(GetWorld(), VaultCapsuleLocation, TraceEnd, VaultCapsRadius, ETraceTypeQuery::TraceTypeQuery1, true, IgnoreActors, EDrawDebugTrace::None, SphereHitResult, true, FLinearColor::Red);
+#else
+	const auto bHit = UKismetSystemLibrary::SphereTraceSingle(GetWorld(), VaultCapsuleLocation, TraceEnd, VaultCapsRadius, ETraceTypeQuery::TraceTypeQuery1, true, IgnoreActors, EDrawDebugTrace::ForDuration, SphereHitResult, true, FLinearColor::Red);
+#endif
 
 	if (!bHit)
 		return;
@@ -1890,75 +1802,66 @@ void APlayerBase::OnVaultBoxBeginOverlap(UPrimitiveComponent* HitComp, AActor* O
 	
 	if (GetCharacterMovement()->IsFalling())
 		TryEnterVaultingTransition(VaultCapsule->GetComponentLocation());
-	
 }
 
 void APlayerBase::InteractWithNPC()
 {
-	if (PlayerCanInteract)
-	{
+	ReturnIfNull(PlayerCanInteract);
+	
 #ifdef _DEBUG_INTERACTION
 		UE_LOG(LogTemp, Warning, TEXT("You pressed E to interact with the NPC"));
 #endif
-		bPlayerIsTalking = !bPlayerIsTalking;
-		ToggleUI();
-		if (bPlayerIsTalking && AssociatedNPC)
-		{
-			const FVector Location = AssociatedNPC->GetActorLocation();
-			const FVector TargetLocation = GetActorLocation();
+	bPlayerIsTalking = !bPlayerIsTalking;
+	ToggleUI();
+	if (bPlayerIsTalking && AssociatedNPC)
+	{
+		const FVector Location = AssociatedNPC->GetActorLocation();
+		const FVector TargetLocation = GetActorLocation();
 
-			AssociatedNPC->SetActorRotation((TargetLocation - Location).Rotation());
-		}
+		AssociatedNPC->SetActorRotation((TargetLocation - Location).Rotation());
 	}
 }
 
 void APlayerBase::ToggleUI()
 {
 	const auto PlayerControllerRef = Cast<APlayerControllerBase>(Controller);
-
-	if(PlayerControllerRef)
-	{		
-		if(bPlayerIsTalking)
-		{
+	ReturnIfNull(PlayerControllerRef);
+		
+	if(bPlayerIsTalking)
+	{
 #ifdef _DEBUG_INTERACTION
-			UE_LOG(LogTemp, Warning, TEXT("PlayerisNowTalking"));
+		UE_LOG(LogTemp, Warning, TEXT("PlayerisNowTalking"));
 #endif
-			const auto PlayerControllerHUDRef = PlayerControllerRef->HUD;
-			if (PlayerControllerHUDRef->IsInViewport())
-			{
-				if(DialogueUIPtr->IsInViewport()&&!bPlayerIsTalking)
-				{				
-					UWidgetBlueprintLibrary::SetInputMode_GameOnly(PlayerControllerRef);
-					PlayerControllerRef->bShowMouseCursor = true;
-					PlayerControllerRef->bEnableClickEvents = true;
-					PlayerControllerRef->bEnableClickEvents = true;
-					PlayerControllerRef->bEnableMouseOverEvents = true;
-					PlayerControllerRef->SetMouseCursorWidget(EMouseCursor::Crosshairs, WidgetCursorNotLocked);
-					DialogueUIPtr->RemoveFromViewport();
-#ifdef _DEBUG_INTERACTION
-					UE_LOG(LogTemp, Warning, TEXT("DialogueUIHUDRemoved"));
-#endif
-				}	
-				else
-				{		
-					const auto PlayerLines = AssociatedNPC->GetPlayerLines();
-					//GeneratePlayerLines(PlayerLines);
-					
-					DialogueUIPtr->Show();
-					UWidgetBlueprintLibrary::SetInputMode_GameAndUI(PlayerControllerRef);
-					PlayerControllerRef->bShowMouseCursor = true;
-					PlayerControllerRef->bEnableClickEvents = true;
-					PlayerControllerRef->bEnableMouseOverEvents = true;	
-				}
-			}
-		}else
+		const auto PlayerControllerHUDRef = PlayerControllerRef->HUD;
+		if (PlayerControllerHUDRef->IsInViewport())
 		{
-			if (DialogueUIPtr->IsInViewport())
-			{
+			if(DialogueUIPtr->IsInViewport()&&!bPlayerIsTalking)
+			{				
+				UWidgetBlueprintLibrary::SetInputMode_GameOnly(PlayerControllerRef);
+				PlayerControllerRef->bShowMouseCursor = true;
+				PlayerControllerRef->bEnableClickEvents = true;
+				PlayerControllerRef->bEnableClickEvents = true;
+				PlayerControllerRef->bEnableMouseOverEvents = true;
+				PlayerControllerRef->SetMouseCursorWidget(EMouseCursor::Crosshairs, WidgetCursorNotLocked);
 				DialogueUIPtr->RemoveFromViewport();
+#ifdef _DEBUG_INTERACTION
+				UE_LOG(LogTemp, Warning, TEXT("DialogueUIHUDRemoved"));
+#endif
+			}	
+			else
+			{		
+				const auto PlayerLines = AssociatedNPC->GetPlayerLines();		
+				DialogueUIPtr->Show();
+				UWidgetBlueprintLibrary::SetInputMode_GameAndUI(PlayerControllerRef);
+				PlayerControllerRef->bShowMouseCursor = true;
+				PlayerControllerRef->bEnableClickEvents = true;
+				PlayerControllerRef->bEnableMouseOverEvents = true;	
 			}
 		}
-	}	
+	}else
+	{	
+		DialogueUIPtr->RemoveFromViewport();
+	}		
 }
 
 FDialogue* APlayerBase::RetrieveDialogue(UDataTable* TableToSearch, FName RowName)
@@ -1966,12 +1869,8 @@ FDialogue* APlayerBase::RetrieveDialogue(UDataTable* TableToSearch, FName RowNam
 	if (!TableToSearch)
 	{
 		return nullptr;
-
 	}
-
 
 	FString ContextString;
 	return TableToSearch->FindRow<FDialogue>(RowName, ContextString);
-
-
 }

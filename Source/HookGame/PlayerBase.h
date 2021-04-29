@@ -334,10 +334,6 @@ private:
 	float CapsuleDefaultCrouchedHeight{ 64.f };
 	
 	float CapsuleDefaultRadius{ 24.f };
-
-	//Vectors
-	UPROPERTY(EditAnywhere, Category="Settings")
-	USceneComponent* HookSpawnPoint{};
 	
 	//states
 	ECollisionChannel AttachedComponentType;
@@ -397,7 +393,6 @@ private:
 	UPROPERTY()
 	UUserWidget* WidgetSword {nullptr};
 
-	//UPROPERTY(EditAnywhere, Category = "Shadow Projection Camera")
 	UPROPERTY()
 	class USceneCaptureComponent2D* ShadowProjectionCamera { nullptr };
 	
@@ -407,15 +402,12 @@ private:
 	UPROPERTY(EditAnywhere, Category = "Shadow Projection Camera")
 	USpringArmComponent* ShadowProjectionCameraArm{nullptr};
 	
-	//UPROPERTY(EditAnywhere, Category = "Shadow Projection Camera")
 	UPROPERTY()
 	class USceneCaptureComponent2D* DepthProjectionCamera{ nullptr };
 	
 	UPROPERTY(EditAnywhere, Category = "Depth Projection Texture")
 	class UTextureRenderTarget2D* DepthProjectionTexture{ nullptr };
 	
-	UPROPERTY(EditAnywhere, Category = "Landscape")
-		class ALandscape* LandScapeRef{ nullptr };
 	//-----------------------------------------------------------
 	
 protected:
@@ -541,16 +533,17 @@ public:
 	virtual void OnUpdatePlayerCustomTexture2DUniform(class FViewUniformShaderParameters& ViewUniformShaderParameters) override;
 	virtual void OnUpdatePlayerCustomCbUniform(TStaticArray<FVector4, 8>& DataPins) override;
 
-	//Save/Load/Checkpoint system
-	
+	//Save/Load/Checkpoint system	
 	UFUNCTION()
 	void LoadPlayerData();
+	
 	UFUNCTION(BlueprintCallable)
 	void SaveGame();
+	
 	UFUNCTION(BlueprintCallable)
 	void LoadGame();
+	
 	UFUNCTION(BlueprintCallable)
-
 	void SaveLatestCheckpoint();
 
 	UFUNCTION(BlueprintCallable)
@@ -560,15 +553,15 @@ public:
 	bool bRestartGame = false;
 
 	UFUNCTION(BlueprintPure)
-	float GetPlayerToHookRotation();
+	float GetPlayerToHookRotation() const;
 
 	//PowerUp/HealthUp
 
 	UFUNCTION()
-	float GetCurrentHealth();
+	float GetCurrentHealth() const;
 
 	UFUNCTION()
-	float GetMaxHealth();
+	float GetMaxHealth() const;
 	
 public:
 	UFUNCTION()
@@ -577,11 +570,11 @@ public:
 	UFUNCTION()
 		void InteractionNotActive(UPrimitiveComponent* OverlappedComponent, AActor* OtherActor, UPrimitiveComponent* OtherComp, int32 OtherBodyIndex);
 
-	void OnIncomingXP(int32 Amount);
+	void OnIncomingXP(int32 Amount) const;
 	
 	void GeneratePlayerLines(UDataTable* PlayerLines);
 
-	void OnPlayerKnockBack(const FVector& KnockBackFrom, float KnockBackValue);
+	void OnPlayerKnockBack(const FVector& KnockBackFrom, float KnockBackValue) const;
 
 	void OnHookHitGrappleTo();
 	void OnHookHitGrappleInAttachedComponent(_Inout_ UPrimitiveComponent* OtherComp);

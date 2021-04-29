@@ -6,6 +6,7 @@
 #include "BehaviorTree/BlackboardComponent.h"
 #include "Math/UnrealMathUtility.h"
 #include "AIBehaviorBase.h"
+#include "PlayerBase.h"
 #include "AIRobotSidekick.h"
 
 //#define _DEBUG_AICONTROLLER
@@ -29,22 +30,20 @@ AAIControllerBase::AAIControllerBase() {
 	
 }
 
-void AAIControllerBase::BeginPlay() {
-	Super::BeginPlay();
-
+void AAIControllerBase::BeginPlay()
+{
 	
+	Super::BeginPlay();
 	
 	APawn* PlayerPawn = UGameplayStatics::GetPlayerPawn(GetWorld(), 0);
-
+	
 	if (AIBehavior != nullptr) { // if AIBehavior exists, Sets all blackboard key values
 		RunBehaviorTree(AIBehavior);
 		if (!GetBlackboardComponent())
 		{
 			return;
 		}
-		
-		
-		
+			
 		if (GetPawn<AAIBehaviorBase>())
 		{
 			GetBlackboardComponent()->SetValueAsVector(TEXT("StartLocation"), GetPawn()->GetActorLocation());
@@ -52,6 +51,8 @@ void AAIControllerBase::BeginPlay() {
 			GetBlackboardComponent()->SetValueAsBool(TEXT("PlayerInRange"), GetPawn<AAIBehaviorBase>()->bPlayerInRange);
 			GetBlackboardComponent()->SetValueAsFloat(TEXT("ResetTimer"), GetPawn<AAIBehaviorBase>()->ResetTimer);
 			GetBlackboardComponent()->SetValueAsBool(TEXT("IsPatrolling"), GetPawn<AAIBehaviorBase>()->bPatrollingEnabled);
+			
+			
 		}
 		if(GetPawn<AAIRobotSidekick>())
 		{
@@ -71,7 +72,8 @@ void AAIControllerBase::BeginPlay() {
 	}
 }
 
-void AAIControllerBase::Tick(float DeltaSeconds) {
+void AAIControllerBase::Tick(float DeltaSeconds)
+{
 	Super::Tick(DeltaSeconds);
 
 	if (!GetBlackboardComponent())
@@ -87,6 +89,8 @@ void AAIControllerBase::Tick(float DeltaSeconds) {
 		GetBlackboardComponent()->SetValueAsBool(TEXT("bCanAttack"), GetPawn<AAIBehaviorBase>()->bCanAttack);
 		GetBlackboardComponent()->SetValueAsBool(TEXT("IsKnockedBack"), GetPawn<AAIBehaviorBase>()->bKnockedBack);
 		GetBlackboardComponent()->SetValueAsVector(TEXT("DistanceToPlayer"), PlayerPawn->GetActorLocation() - GetPawn()->GetActorLocation());
+		if (const auto PlayerBase = Cast<APlayerBase>(PlayerPawn))
+			GetBlackboardComponent()->SetValueAsBool(TEXT("IsPlayerDead"), PlayerBase->IsDead());
 		if (LineOfSightTo(PlayerPawn)&&!GetPawn<AAIRobotSidekick>()) { // Checks if the AI Can see the player, and therefore if it can chase them.
 			GetBlackboardComponent()->SetValueAsVector(TEXT("PlayerLocation"), PlayerPawn->GetActorLocation());
 			GetBlackboardComponent()->SetValueAsVector(TEXT("LastKnownPlayerLocation"), PlayerPawn->GetActorLocation());

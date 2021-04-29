@@ -8,7 +8,7 @@
 #include "Components/SphereComponent.h"
 #include "HookProjectile.h"
 
-#define _DEBUG_QUEENSQUIDBASE
+//#define _DEBUG_QUEENSQUIDBASE
 
 AAIQueenSquidBase::AAIQueenSquidBase()
 {
