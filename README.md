@@ -8,15 +8,15 @@ Kristian W. Stensland,
 Hans-Petter Kristoffersen
 
 Artists:
-August,
-Irrjan,
-Luis
+August Erle,
+Irrjan Samuel Jernsletten,
+Luis Samuelsen Seterholtet
 
+!!!!!!!!! IMPORTANT !!!!!!!!!!!!!!
 
-How to play:
+If included Binaries doesn't work, 
+you have to download and compile the engine linked below:
 
-wasd - Movement
+https://github.com/xardas110/UnrealEngine
 
-RMB - Hook function - Hold/Release
-
-LMB - Attack with sword
+Meisam Taheri and Ole E. Flaten has access to this engine.
