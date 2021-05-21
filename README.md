@@ -31,7 +31,7 @@ God Mode + Increase XP = K
 
 !!!!!!!!! IMPORTANT !!!!!!!!!!!!!!
 
-If included Binaries doesn't work, 
+In order to view the project in Unreal editor, 
 you have to download and compile the engine linked below:
 
 https://github.com/xardas110/UnrealEngine
