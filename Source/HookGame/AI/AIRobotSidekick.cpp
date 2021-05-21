@@ -27,7 +27,30 @@ void AAIRobotSidekick::BeginPlay()
 
 void AAIRobotSidekick::SetStartValues()
 {
+	const auto GameInstance = Cast<UHookGameInstance>(GetGameInstance());
+	ReturnIfNull(GameInstance);
 	
+	if (GameInstance->bNPCDataLoad)
+	{
+		GameInstance->LoadNPCData(this);
+		GameInstance->bNPCDataLoad = false;
+		}
+	if (GameInstance->bNPCCheckpointDataLoad)
+	{
+		GameInstance->LoadNPCCheckpoint(this);
+		GameInstance->bNPCCheckpointDataLoad = false;
+	}
+	if (bInteractable)
+	{
+		bFollowPlayer = false;
+		InteractionComp->OnComponentBeginOverlap.AddDynamic(this, &AAIRobotSidekick::InteractionActive);
+		InteractionComp->OnComponentEndOverlap.AddDynamic(this, &AAIRobotSidekick::InteractionNotActive);
+	}
+	if (!bInteractable)
+	{
+		bFollowPlayer = true;
+
+	}
 }
 
 void AAIRobotSidekick::Tick(float DeltaTime)
@@ -43,6 +66,60 @@ float AAIRobotSidekick::TakeDamage(float DamageAmount, FDamageEvent const& Damag
 	UE_LOG(LogTemp, Error, TEXT(" Robots feel no pain! "));
 	return 0;
 }
+
+
+void AAIRobotSidekick::InteractionActive(UPrimitiveComponent* HitComp, AActor* OtherActor, UPrimitiveComponent* OtherComp, int32 OtherIndex, bool bFromSweep, const FHitResult& SweepResult)
+{
+	if (OtherActor->IsA<APlayerBase>())
+	{
+		if(bInteractable)
+		{
+			/*UE_LOG(LogTemp, Warning, TEXT("NPC registered that you are in the interaction area"));*/
+			APlayerBase* Char = Cast<APlayerBase>(OtherActor);
+			Char->SetTalkRangeStatus(true);
+			Char->SetAssociatedPawn(this);
+			Char->SetInteractableNPC(this);
+			Char->GeneratePlayerLines(Char->PlayerLines);
+			Char->DisplayInteractMessage();
+		}
+
+	}
+
+}
+
+void AAIRobotSidekick::InteractionNotActive(UPrimitiveComponent* HitComp, AActor* OtherActor, UPrimitiveComponent* OtherComp, int32 OtherIndex)
+{
+	
+	if (OtherActor->IsA<APlayerBase>())
+	{
+		if(bInteractable)
+		{
+			/*UE_LOG(LogTemp, Warning, TEXT("NPC registered that you are no longer in the interaction area"));*/
+			APlayerBase* Char = Cast<APlayerBase>(OtherActor);
+			Char->SetTalkRangeStatus(false);
+			Char->SetAssociatedPawn(nullptr);
+			Char->SetInteractableNPC(nullptr);
+			SetFollowStatus(Char->bNPCFollowPlayer);
+			this->SetActorRotation(InitialRotation);
+
+			bool PlayerBaseFollowStatus = Char->bNPCFollowPlayer;
+
+			if(Char->bNPCFollowPlayer)
+			{
+				this->SetActorRotation(InitialRotation);
+			}
+
+			//UE_LOG(LogTemp, Warning, TEXT("PlayerBaseFollowStatus is set to: %s"), (PlayerBaseFollowStatus ? TEXT("true") : TEXT("false")));
+			//UE_LOG(LogTemp, Warning, TEXT("NPCFollowStatus is set to: %s"), (bFollowPlayer ? TEXT("true") : TEXT("false")));
+			//UE_LOG(LogTemp, Warning, TEXT("NPCinteractStatus is set to: %s"), (bInteractable ? TEXT("true") : TEXT("false")));
+			
+		}
+		
+	}
+}
+
+
+
 
 void AAIRobotSidekick::SetFollowStatus(bool FollowStatus)
 {

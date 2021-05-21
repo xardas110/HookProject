@@ -56,8 +56,18 @@ public:
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Robot Sidekick Parameters")
 		float CatchupSpeedMultiplier = 2.f; // The value to multiply speed with when catching up to the player
 
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "DialogueSystem")
+		bool bInteractable = true;
+
 
 	///			Functions			///
+
+	UFUNCTION()
+		void InteractionActive(UPrimitiveComponent* HitComp, AActor* OtherActor, UPrimitiveComponent* OtherComp, int32 OtherIndex, bool bFromSweep, const FHitResult& SweepResult);
+
+	UFUNCTION()
+		void InteractionNotActive(UPrimitiveComponent* HitComp, AActor* OtherActor, UPrimitiveComponent* OtherComp, int32 OtherIndex);
+
 
 	virtual void Tick(float DeltaTime) override;
 	void SetFollowStatus(bool FollowStatus);
