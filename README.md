@@ -36,4 +36,7 @@ you have to download and compile the engine linked below:
 
 https://github.com/xardas110/UnrealEngine
 
+Reason is that the binaries folder was too big for GitHub,
+and after testing we didn't get it to work this way.
+
 Meisam Taheri and Ole E. Flaten has access to this engine.
