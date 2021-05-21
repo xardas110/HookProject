@@ -14,6 +14,12 @@ class HOOKGAME_API UMainHUD : public UUserWidget
 	GENERATED_BODY()
 		friend class APlayerBase;
 
+	UPROPERTY(meta = (BindWidget))
+		UProgressBar* HpBar;
+
+	UPROPERTY(meta = (BindWidget))
+		UProgressBar* EnergyBar;
+
 	//Hints
 	
 	UPROPERTY(meta = (BindWidget))
