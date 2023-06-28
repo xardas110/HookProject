@@ -2,7 +2,7 @@
 
 ## Install
 
-This game uses a forked UE4 edition that is rewritted by AAA to support proper toon shading and character shadow.
+This game uses a re-writted UE4 engine by AAA to support proper toon shading and character shadow.
 A private repository contains the re-writted engine: https://github.com/xardas110/UnrealEngine
 
 
