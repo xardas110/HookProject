@@ -1,6 +1,12 @@
-# HookProject
+# ESA
 
-Group 8:
+## Install
+
+This game uses a forked UE4 edition that is rewritted by AAA to support proper toon shading and character shadow.
+A private repository contains the re-writted engine: https://github.com/xardas110/UnrealEngine
+
+
+## Contributors
 
 Programmers:
 Ali Al-Awadi,
@@ -12,7 +18,7 @@ August Erle,
 Irrjan Samuel Jernsletten,
 Luis Samuelsen Seterholtet
 
------------Controls--------------
+## Controls
 
 WASD - Movement
 Shift - Sprint
@@ -27,16 +33,3 @@ Quick-Save - F1
 Quick-Load - F5
 God Mode + Increase XP = K
 
----------------------------------------
-
-!!!!!!!!! IMPORTANT !!!!!!!!!!!!!!
-
-In order to view the project in Unreal editor, 
-you have to download and compile the engine linked below:
-
-https://github.com/xardas110/UnrealEngine
-
-Reason is that the binaries folder was too big for GitHub,
-and after testing we didn't get it to work this way.
-
-Meisam Taheri and Ole E. Flaten has access to this engine.
